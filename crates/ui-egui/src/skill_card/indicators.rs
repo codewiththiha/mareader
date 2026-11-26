@@ -11,11 +11,13 @@ use crate::ui_command::{Commands, Sent};
 
 mod layout;
 
-const HEIGHT: f32 = 28.0;
+const HEIGHT: f32 = 22.0;
 const GAP: f32 = 4.0;
 const INSET: f32 = 8.0;
-const MAX_WIDTH: f32 = 180.0;
-const MIN_WIDTH: f32 = 40.0;
+const MAX_WIDTH: f32 = 140.0;
+const MIN_WIDTH: f32 = 36.0;
+const TEXT_SIZE: f32 = 10.5;
+const PAD: f32 = 16.0;
 
 struct Item<'a> {
     ask: &'a Ask,
@@ -115,10 +117,10 @@ impl<'a> Indicators<'a> {
             .iter()
             .map(|i| {
                 ctx.fonts_mut(|f| {
-                    f.layout_no_wrap(i.ask.name.clone(), theme::medium(t.text_small), t.ink)
+                    f.layout_no_wrap(i.ask.name.clone(), theme::medium(TEXT_SIZE), t.ink)
                 })
                 .size()
-                .x + 24.0
+                .x + PAD
             })
             .fold(MIN_WIDTH, f32::max)
             .min(MAX_WIDTH)
@@ -181,12 +183,9 @@ fn draw(ui: &mut Ui, size: egui::Vec2, text: &str, label: &str, t: &Tokens) -> e
     ui.painter().rect_filled(rect, t.radius, fill);
     ui.painter()
         .rect_stroke(rect, t.radius, Stroke::new(1.0, t.line), StrokeKind::Inside);
-    let mut job = egui::text::LayoutJob::simple_singleline(
-        text.to_owned(),
-        theme::medium(t.text_small),
-        t.ink,
-    );
-    job.wrap = egui::text::TextWrapping::truncate_at_width((rect.width() - 16.0).max(0.0));
+    let mut job =
+        egui::text::LayoutJob::simple_singleline(text.to_owned(), theme::medium(TEXT_SIZE), t.ink);
+    job.wrap = egui::text::TextWrapping::truncate_at_width((rect.width() - 12.0).max(0.0));
     let galley = ui.painter().layout_job(job);
     let pos = Align2::CENTER_CENTER
         .align_size_within_rect(galley.size(), rect)

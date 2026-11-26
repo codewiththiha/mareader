@@ -75,6 +75,10 @@ fn named_answers_at_the_same_selection_remain_independently_reachable() {
     let a = h.get_by_label("Open Simplify answer").rect();
     let b = h.get_by_label("Open Quiz me answer").rect();
     assert!(!a.intersects(b), "{a:?} {b:?}");
+    for rect in [a, b] {
+        assert!((rect.height() - 22.0).abs() < 0.5, "{rect:?}");
+        assert!(rect.width() < 80.0, "{rect:?}");
+    }
     h.get_by_label("Open Quiz me answer").focus();
     h.run_steps(2);
     h.key_press(egui::Key::Enter);
