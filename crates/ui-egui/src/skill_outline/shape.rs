@@ -113,7 +113,10 @@ fn bend(points: &[Pos2]) -> Vec<Pos2> {
             continue;
         }
         let normal = egui::vec2(side.y, -side.x) / len;
-        let k = ((i as u32).wrapping_mul(37).wrapping_add((len as u32).wrapping_mul(11))) % 17;
+        let k = ((i as u32)
+            .wrapping_mul(37)
+            .wrapping_add((len as u32).wrapping_mul(11)))
+            % 17;
         let first = 0.45 + (k % 5) as f32 * 0.22;
         let second = 0.45 + ((k * 7 + 3) % 5) as f32 * 0.22;
         let steps = ((len / 25.0).ceil() as usize).clamp(2, 64);
@@ -171,7 +174,12 @@ mod tests {
 
     #[test]
     fn long_sides_bow_outward_without_mirroring() {
-        let straight = [pos2(0.0, 0.0), pos2(200.0, 0.0), pos2(200.0, 30.0), pos2(0.0, 30.0)];
+        let straight = [
+            pos2(0.0, 0.0),
+            pos2(200.0, 0.0),
+            pos2(200.0, 30.0),
+            pos2(0.0, 30.0),
+        ];
         let path = bend(&straight);
         assert!(path.iter().any(|p| p.y < -0.3));
         assert!(path.iter().any(|p| p.y > 30.3));
