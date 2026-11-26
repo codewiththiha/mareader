@@ -24,7 +24,11 @@ fn paint(
     docs: DocumentsView<'_>,
     (working, glow): (bool, crate::glow::Glow),
 ) {
-    let Some(room) = panes.iter().find(|(p, _)| *p == place.pane).map(|(_, r)| *r) else {
+    let Some(room) = panes
+        .iter()
+        .find(|(p, _)| *p == place.pane)
+        .map(|(_, r)| *r)
+    else {
         return;
     };
     let tokens = Tokens::get(ctx);
@@ -59,7 +63,14 @@ fn paint(
                 ^ (range.end as u64).wrapping_mul(0x94d049bb133111eb);
             let points = rounded(&contour(group), group, seed);
             if let Some(line) = group.first() {
-                visible |= crate::glow::paint_path(ctx, &painter, &tokens, &points, line.expand(0.5), glow);
+                visible |= crate::glow::paint_path(
+                    ctx,
+                    &painter,
+                    &tokens,
+                    &points,
+                    line.expand(0.5),
+                    glow,
+                );
             }
         }
     }

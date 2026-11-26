@@ -340,11 +340,20 @@ fn selection_flare_uses_the_shared_outro_on_finish_and_close() {
         .queue(Sent::Engine(Command::Skill(Action::Retry(ask))));
     for _ in 0..12 {
         h.run_steps(1);
-        if h.state().skills().get(ask).is_some_and(|a| a.answer.landed()) {
+        if h.state()
+            .skills()
+            .get(ask)
+            .is_some_and(|a| a.answer.landed())
+        {
             break;
         }
     }
-    assert!(h.state().skills().get(ask).is_some_and(|a| a.answer.landed()));
+    assert!(
+        h.state()
+            .skills()
+            .get(ask)
+            .is_some_and(|a| a.answer.landed())
+    );
     h.run_steps(6);
     let id = egui::Id::new(("skill-glow", ask.0));
     let fading = glow::state(&h.ctx, id, false).expect("completion still glows");
@@ -364,7 +373,10 @@ fn selection_flare_uses_the_shared_outro_on_finish_and_close() {
     h.run_steps(6);
     assert!(h.state().skills().get(ask).is_none(), "the ask was closed");
     let fading = glow::state(&h.ctx, id, false).expect("close still glows");
-    assert!(fading.whole > 0.0 && fading.strength > 0.0, "close flares out");
+    assert!(
+        fading.whole > 0.0 && fading.strength > 0.0,
+        "close flares out"
+    );
     assert!(glow::shown(&h.ctx) > 0, "the closed ask's outro is painted");
     h.run_steps(60);
     assert_eq!(glow::shown(&h.ctx), 0, "the closed flare disappears");

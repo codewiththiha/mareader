@@ -22,7 +22,9 @@ fn memory() -> Id {
 
 /// Draws running places and lets finished or closed ones flare out.
 pub(crate) fn show(ctx: &Context, asks: &[Ask], panes: &[(PaneId, Rect)], docs: DocumentsView<'_>) {
-    let mut places = ctx.data(|d| d.get_temp::<Vec<Place>>(memory())).unwrap_or_default();
+    let mut places = ctx
+        .data(|d| d.get_temp::<Vec<Place>>(memory()))
+        .unwrap_or_default();
     for ask in asks.iter().filter(|a| !a.answer.landed()) {
         if let Anchor::Text(spans) = &ask.anchor
             && !places.iter().any(|p| p.id == ask.id)
@@ -36,7 +38,10 @@ pub(crate) fn show(ctx: &Context, asks: &[Ask], panes: &[(PaneId, Rect)], docs: 
         }
     }
     places.retain(|place| {
-        if docs.reading(place.pane).is_none_or(|r| r.doc.get() != place.doc) {
+        if docs
+            .reading(place.pane)
+            .is_none_or(|r| r.doc.get() != place.doc)
+        {
             return false;
         }
         let working = asks.iter().any(|a| a.id == place.id && !a.answer.landed());
