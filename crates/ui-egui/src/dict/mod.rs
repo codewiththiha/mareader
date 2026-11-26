@@ -42,8 +42,9 @@ struct Card {
     word: String,
     context: String,
     asked: Option<Asked>,
+    anchor: Option<crate::word_card::TextAnchor>,
     at: Rect,
-    /// The pane's scroll when it opened; a scroll away closes it.
+    /// The pane scroll when a hover or unanchored card opened.
     offset: Option<Vec2>,
     ticket: Ticket,
     reply: Option<Reply>,
@@ -196,9 +197,9 @@ impl DictUi {
         pane: PaneId,
         word: String,
         ticket: Ticket,
-        at: Rect,
-        offset: Option<Vec2>,
+        (at, offset): (Rect, Option<Vec2>),
         asked: Option<Asked>,
+        anchor: Option<crate::word_card::TextAnchor>,
     ) {
         self.stash = None;
         let context = asked
@@ -210,6 +211,7 @@ impl DictUi {
             word,
             context,
             asked,
+            anchor,
             at,
             offset,
             ticket,
@@ -234,7 +236,7 @@ impl DictUi {
             _ => {}
         }
         let ticket = session.dict_look_up(&word);
-        self.show_lookup(pane, word, ticket, at, offset, asked);
+        self.show_lookup(pane, word, ticket, (at, offset), asked, None);
         if let Some(card) = &mut self.card {
             card.rest = true;
             if card.context.is_empty() {
@@ -243,16 +245,6 @@ impl DictUi {
         }
         self.card_rect = None;
         true
-    }
-
-    /// Whether the open card came from resting on a word, for tests.
-    pub fn card_rested(&self) -> bool {
-        self.card.as_ref().is_some_and(|c| c.rest)
-    }
-
-    /// The word the card shows.
-    pub fn card_word(&self) -> Option<&str> {
-        self.card.as_ref().map(|c| c.word.as_str())
     }
 
     /// Where the card was drawn and the words it points at, for tests.
@@ -338,6 +330,7 @@ impl DictUi {
         (attached, ai_ready, languages): (bool, bool, card::Languages<'_>),
         (panes, heard): (&[(PaneId, Rect)], mareader_engine::sounds::Heard<'_>),
         pane_info: impl Fn(PaneId) -> (Option<Vec2>, Option<usize>),
+        locate: impl Fn(PaneId, &mut crate::word_card::TextAnchor) -> Option<Option<Rect>>,
         out: &mut Commands,
     ) {
         let pressed = ctx.input(|i| i.pointer.press_origin().filter(|_| i.pointer.any_pressed()));
@@ -347,6 +340,7 @@ impl DictUi {
             (Some(a), Some(b)) => (a - b).length() > 0.5,
             _ => false,
         };
+        let offscreen = self.follow_anchor(locate);
         // A rested card stays while the pointer is on its word or itself.
         let pointer = ctx.input(|i| i.pointer.latest_pos());
         let left = |c: &Card| {
@@ -357,7 +351,13 @@ impl DictUi {
             .card
             .as_ref()
             .filter(|_| self.editor.is_none())
-            .is_some_and(|c| outside || room(c.pane).is_none() || moved(c) || left(c));
+            .is_some_and(|c| {
+                outside
+                    || room(c.pane).is_none()
+                    || offscreen
+                    || ((c.rest || c.anchor.is_none()) && moved(c))
+                    || left(c)
+            });
         if dismiss {
             self.card = None;
             self.stash = None;

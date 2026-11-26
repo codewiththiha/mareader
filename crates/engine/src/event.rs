@@ -98,6 +98,7 @@ pub enum Event {
         word: String,
         ticket: mareader_dict::Ticket,
         spans: Vec<(usize, Range<usize>)>,
+        spot: Option<mareader_library::Spot>,
         asked: Option<Asked>,
     },
     /// Open floating dictionary window answers `word` instead of a card.

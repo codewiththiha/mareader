@@ -325,3 +325,167 @@ fn hover_card_switched_to_ai_tracks_scroll_and_aligns_meta_row() {
     h.run_steps(3);
     assert_eq!(h.state().study().card_word(), None);
 }
+
+#[test]
+fn selected_dictionary_tracks_scroll_and_closes_offscreen() {
+    let dir = shelf();
+    let mut h = reader(dir.path());
+    select(&mut h, "quick brown");
+    h.get_by_label("Look up").click();
+    h.run();
+    let (card, anchor) = h.state().dict().card_place().expect("lookup shown");
+    assert!(
+        card.width() >= 380.0,
+        "card should use wider shell: {card:?}"
+    );
+    crate::common::scroll(&mut h, 45.0);
+    let (_, moved) = h
+        .state()
+        .dict()
+        .card_place()
+        .expect("still shown after scroll");
+    assert!(
+        (moved.top() - anchor.top()).abs() > 5.0,
+        "anchor should move: {anchor:?} -> {moved:?}"
+    );
+    go_to(&mut h, 4);
+    h.run_steps(3);
+    assert_eq!(h.state().dict().card_word(), None);
+}
+
+#[test]
+fn dictionary_anchor_survives_round_trip_through_ai_tab() {
+    let dir = shelf();
+    let mut h = reader(dir.path());
+    select(&mut h, "quick");
+    h.get_by_label("Look up").click();
+    h.run();
+    h.get_by_label("AI in context").click();
+    h.run();
+    let tab = h
+        .query_all_by_label("Dictionary")
+        .find(|n| n.rect().top() > 50.0)
+        .expect("dictionary tab")
+        .rect()
+        .center();
+    click_at(&mut h, tab);
+    h.run();
+    let before = h.state().dict().card_place().expect("restored").1;
+    crate::common::scroll(&mut h, 45.0);
+    let after = h.state().dict().card_place().expect("still open").1;
+    assert!(
+        (after.top() - before.top()).abs() > 5.0,
+        "{before:?} -> {after:?}"
+    );
+    go_to(&mut h, 4);
+    h.run_steps(3);
+    assert_eq!(h.state().dict().card_word(), None);
+}
+
+#[test]
+fn ai_origin_dictionary_tracks_its_mark() {
+    let dir = shelf();
+    let mut h = reader(dir.path());
+    select(&mut h, "quick");
+    h.get_by_label("AI Dictionary").click();
+    h.run();
+    let tab = h
+        .query_all_by_label("Dictionary")
+        .find(|n| n.rect().top() > 50.0)
+        .expect("dictionary tab")
+        .rect()
+        .center();
+    click_at(&mut h, tab);
+    h.run();
+    let before = h
+        .state()
+        .dict()
+        .card_place()
+        .expect("dictionary tab open")
+        .1;
+    crate::common::scroll(&mut h, 45.0);
+    let after = h.state().dict().card_place().expect("still open").1;
+    assert!(
+        (after.top() - before.top()).abs() > 5.0,
+        "{before:?} -> {after:?}"
+    );
+    go_to(&mut h, 4);
+    h.run_steps(3);
+    assert_eq!(h.state().dict().card_word(), None);
+}
+
+#[test]
+fn selected_book_word_tracks_reflow() {
+    let dir = shelf();
+    let path = dir.path().to_string_lossy().into_owned();
+    let mut h = reader_with(&[("dictionaries", &path), ("epub", "sample:2")]);
+    let pane = h.state().active_pane();
+    let page = (0..8)
+        .find(|&p| {
+            h.state_mut().queue(Sent::Engine(Command::SelectText {
+                pane,
+                page: p,
+                text: "customs".into(),
+            }));
+            h.run();
+            h.state().documents().selection(pane).is_some()
+        })
+        .expect("sample contains customs");
+    go_to(&mut h, page);
+    h.run();
+    h.get_by_label("Look up").click();
+    h.run();
+    assert_eq!(h.state().dict().card_word(), Some("customs"));
+    let before = h.state().dict().card_place().expect("book card").1;
+    h.state_mut()
+        .set_option("text_size", "30")
+        .expect("change text size");
+    h.run_steps(10);
+    h.run();
+    let after = h
+        .state()
+        .dict()
+        .card_place()
+        .expect("book card follows reflow")
+        .1;
+    assert_ne!(before, after, "book anchor should change after reflow");
+}
+
+#[test]
+fn word_card_fits_a_narrow_pane_in_both_tabs() {
+    let dir = shelf();
+    let mut h = reader(dir.path());
+    h.set_size(egui::vec2(320.0, 700.0));
+    h.run_steps(5);
+    let md = OpenRequest::bytes(b"A quick fox jumps.".to_vec(), "narrow.md");
+    h.state_mut().queue(Sent::Engine(Command::Open(md)));
+    h.run_steps(5);
+    h.run();
+    select(&mut h, "quick");
+    h.get_by_label("Look up").click();
+    h.run();
+    let card = h.state().dict().card_place().expect("narrow card").0;
+    assert!(
+        card.width() < 380.0 && card.left() >= 0.0 && card.right() <= 320.0,
+        "{card:?}"
+    );
+    h.get_by_label("AI in context").click();
+    h.run();
+    assert_eq!(h.state().study().card_word(), Some("quick"));
+    let close = h.get_by_label("Close").rect();
+    assert!(close.left() >= 0.0 && close.right() <= 320.0, "{close:?}");
+}
+
+#[test]
+fn replacing_a_document_does_not_attach_the_old_lookup() {
+    let dir = shelf();
+    let mut h = reader(dir.path());
+    select(&mut h, "quick");
+    h.get_by_label("Look up").click();
+    h.run();
+    let md = OpenRequest::bytes(b"Another quick sentence.".to_vec(), "new.md");
+    h.state_mut().queue(Sent::Engine(Command::Open(md)));
+    h.run_steps(6);
+    h.run();
+    assert_eq!(h.state().dict().card_word(), None);
+}

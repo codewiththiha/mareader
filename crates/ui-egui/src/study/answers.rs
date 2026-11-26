@@ -3,10 +3,10 @@
 use egui::{Rect, Vec2};
 use mareader_cefr::Role;
 use mareader_engine::session::Session;
-use mareader_library::{BookId, MarkId};
+use mareader_library::{BookId, Library, MarkId};
 use mareader_workspace::PaneId;
 
-use super::{Card, Explained, StudyUi};
+use super::{Card, Explained, StudyState, StudyUi};
 use crate::word_card::TabSnapshot;
 use mareader_engine::study::state::Key;
 
@@ -119,13 +119,22 @@ impl StudyUi {
     }
 
     /// Stashes the open AI card so returning to AI in context is instant.
-    pub fn stash_for_tab(&mut self) -> Option<TabSnapshot> {
+    pub fn stash_for_tab(&mut self, state: &StudyState, main: &Library) -> Option<TabSnapshot> {
         let card = self.card.take()?;
         let snap = TabSnapshot {
             pane: card.pane,
             word: card.word.clone(),
             context: card.context.clone(),
             asked: None,
+            anchor: match card.key {
+                Key::Mark(id) => state.mark(main, id).map(|m| crate::word_card::TextAnchor {
+                    spans: Vec::new(),
+                    spot: Some(m.spot),
+                    doc: None,
+                    reflow_source: None,
+                }),
+                Key::Loose(_) => None,
+            },
             at: card.at,
             role: card.role.clone(),
             dictionary: card.dictionary,

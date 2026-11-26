@@ -35,6 +35,8 @@ use crate::thumbnails::{self, ThumbState};
 use crate::ui_command::{Commands, Sent, UiCommand};
 use crate::zoom::ZoomState;
 
+mod lookup;
+
 /// One pane's document as navigation sees it, as of last frame.
 #[derive(Clone, Debug)]
 pub struct Reading {

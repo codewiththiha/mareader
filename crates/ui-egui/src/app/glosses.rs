@@ -405,6 +405,7 @@ impl MareaderApp {
             (attached, ai_ready, languages),
             (&self.ui.pane_rects, heard),
             pane_info,
+            |pane, anchor| docs.lookup_anchor(pane, anchor),
             out,
         );
     }

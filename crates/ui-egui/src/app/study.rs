@@ -157,10 +157,19 @@ impl MareaderApp {
                 self.ask_role();
             }
             crate::word_card::Mode::Dictionary => {
-                let Some(snap) = self.ui.study.stash_for_tab() else {
+                let Some(mut snap) = self
+                    .ui
+                    .study
+                    .stash_for_tab(self.session.study(), self.session.library_model())
+                else {
                     return;
                 };
-                let offset = self.documents().offset(snap.pane);
+                let docs = self.documents();
+                let offset = docs.offset(snap.pane);
+                if let Some(anchor) = &mut snap.anchor {
+                    anchor.doc = docs.reading(snap.pane).map(|r| r.doc);
+                    anchor.reflow_source = docs.reflow_source(snap.pane);
+                }
                 if self.ui.dict.restore_from_tab(&snap, offset) {
                     return;
                 }

@@ -11,6 +11,37 @@ use super::{Card, DictUi, card};
 use crate::word_card;
 
 impl DictUi {
+    /// The word the card shows.
+    pub fn card_word(&self) -> Option<&str> {
+        self.card.as_ref().map(|c| c.word.as_str())
+    }
+
+    /// Whether the open card came from resting on a word, for tests.
+    pub fn card_rested(&self) -> bool {
+        self.card.as_ref().is_some_and(|c| c.rest)
+    }
+
+    /// Follow an explicit card's text; a missing layout is not a dismissal.
+    pub(super) fn follow_anchor(
+        &mut self,
+        locate: impl Fn(PaneId, &mut word_card::TextAnchor) -> Option<Option<Rect>>,
+    ) -> bool {
+        let Some(card) = self.card.as_mut().filter(|c| !c.rest) else {
+            return false;
+        };
+        let Some(anchor) = &mut card.anchor else {
+            return false;
+        };
+        match locate(card.pane, anchor) {
+            Some(Some(at)) => {
+                card.at = at;
+                false
+            }
+            Some(None) => true,
+            None => false,
+        }
+    }
+
     /// The tagger's answer for the open card, if it is still `word`'s.
     pub fn set_role(&mut self, word: &str, role: Role) {
         mareader_engine::word_card::set_role(&mut self.card, word, role);
@@ -79,6 +110,7 @@ impl DictUi {
             word,
             context: String::new(),
             asked: None,
+            anchor: None,
             at,
             offset,
             ticket,
@@ -93,11 +125,20 @@ impl DictUi {
     pub fn stash_for_tab(&mut self) -> Option<word_card::TabSnapshot> {
         let mut card = self.card.take()?;
         card.rest = false;
+        if card.anchor.is_none() {
+            card.anchor = card.asked.as_ref().map(|a| word_card::TextAnchor {
+                spans: vec![(a.page, a.chars.clone())],
+                spot: a.spot,
+                doc: None,
+                reflow_source: None,
+            });
+        }
         let snap = word_card::TabSnapshot {
             pane: card.pane,
             word: card.word.clone(),
             context: card.context.clone(),
             asked: card.asked.clone(),
+            anchor: card.anchor.clone(),
             at: card.at,
             role: card.role.clone(),
             dictionary: card.dictionary,
@@ -121,6 +162,13 @@ impl DictUi {
         if card.role.is_none() {
             card.role = snap.role.clone();
         }
+        card.anchor = card.anchor.or_else(|| snap.anchor.clone());
+        if let Some(anchor) = &mut card.anchor
+            && anchor.doc.is_none()
+        {
+            anchor.doc = snap.anchor.as_ref().and_then(|a| a.doc);
+            anchor.reflow_source = snap.anchor.as_ref().and_then(|a| a.reflow_source.clone());
+        }
         card.at = snap.at;
         card.offset = offset;
         self.card_rect = snap.rect;
@@ -141,6 +189,7 @@ impl DictUi {
             word: snap.word,
             context: snap.context,
             asked: snap.asked,
+            anchor: snap.anchor,
             at: snap.at,
             offset,
             ticket,

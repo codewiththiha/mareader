@@ -359,3 +359,20 @@ fn one_book_in_two_panes_keeps_its_words_apart() {
         assert!(found.is_empty(), "{found:#?}");
     }
 }
+
+#[test]
+fn resting_card_dismisses_on_scroll() {
+    let (words, packs) = shelves();
+    let mut h = reader(words.path(), Some(packs.path()));
+    h.hover_at(spot(&h, "quick"));
+    h.run_steps(20);
+    assert!(h.state().dict().card_rested());
+    h.event(Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -45.0),
+        modifiers: egui::Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+    });
+    h.run_steps(2);
+    assert_eq!(h.state().dict().card_word(), None);
+}

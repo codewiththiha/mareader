@@ -19,7 +19,7 @@ use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent, UiCommand};
 use crate::{vocab, widgets};
 
-pub const WIDTH: f32 = 320.0;
+pub const WIDTH: f32 = 380.0;
 pub const PAD: i8 = 14;
 pub const PAD_Y: i8 = 10;
 pub const FOOT: f32 = 36.0;
@@ -37,6 +37,15 @@ pub enum Mode {
     Ai,
 }
 
+/// A selection's page ranges and, when available, its stable document spot.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextAnchor {
+    pub spans: Vec<(usize, std::ops::Range<usize>)>,
+    pub spot: Option<mareader_library::Spot>,
+    pub doc: Option<mareader_session::DocId>,
+    pub reflow_source: Option<(Option<std::path::PathBuf>, String)>,
+}
+
 /// Shared word-card state handed across Dictionary and AI tab switches.
 #[derive(Clone, Debug)]
 pub struct TabSnapshot {
@@ -44,6 +53,7 @@ pub struct TabSnapshot {
     pub word: String,
     pub context: String,
     pub asked: Option<Asked>,
+    pub anchor: Option<TextAnchor>,
     pub at: Rect,
     pub role: Option<Role>,
     pub dictionary: Option<Pos>,

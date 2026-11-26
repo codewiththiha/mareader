@@ -96,6 +96,7 @@ fn look_up(session: &mut Session, pane: PaneId) {
     }
     // Its sentence, so the card can name the word's class or ask AI.
     let asked = session.documents().asked(pane);
+    let spot = session.documents().highlighted(pane).map(|(spot, _)| spot);
     let context = asked.as_ref().map(|a| a.context.as_str());
     session.clear_document_selection(pane);
     let ticket = session.dict_look_up(&word);
@@ -105,6 +106,7 @@ fn look_up(session: &mut Session, pane: PaneId) {
         word,
         ticket,
         spans,
+        spot,
         asked,
     });
 }

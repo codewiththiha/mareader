@@ -171,8 +171,9 @@ impl MareaderApp {
                 word,
                 ticket,
                 spans,
+                spot,
                 asked,
-            } => self.open_lookup(pane, word, ticket, &spans, asked),
+            } => self.open_lookup(pane, word, ticket, (spans, spot), asked),
             Event::DictWindowFeed(word) => {
                 self.ui.dict.escape();
                 self.ui.dict.feed(&word);
@@ -239,18 +240,28 @@ impl MareaderApp {
         pane: PaneId,
         word: String,
         ticket: mareader_dict::Ticket,
-        spans: &[(usize, std::ops::Range<usize>)],
+        anchor: (
+            Vec<(usize, std::ops::Range<usize>)>,
+            Option<mareader_library::Spot>,
+        ),
         asked: Option<mareader_engine::study::words::Asked>,
     ) {
         self.ui.study.escape(&mut self.session);
         let rect = self
             .documents()
-            .spans_rect(pane, spans)
+            .spans_rect(pane, &anchor.0)
             .unwrap_or(Rect::ZERO);
-        let offset = self.documents().offset(pane);
+        let docs = self.documents();
+        let offset = docs.offset(pane);
+        let anchor = crate::word_card::TextAnchor {
+            spans: anchor.0,
+            spot: anchor.1,
+            doc: docs.reading(pane).map(|r| r.doc),
+            reflow_source: docs.reflow_source(pane),
+        };
         self.ui
             .dict
-            .show_lookup(pane, word, ticket, rect, offset, asked);
+            .show_lookup(pane, word, ticket, (rect, offset), asked, Some(anchor));
     }
 
     fn chrome(&mut self, ctx: &Context, ui: UiCommand) {
