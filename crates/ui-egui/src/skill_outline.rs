@@ -70,6 +70,7 @@ fn paint(
                     &points,
                     line.expand(0.5),
                     glow,
+                    place.clock.travel,
                 );
             }
         }

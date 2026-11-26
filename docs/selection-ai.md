@@ -66,7 +66,8 @@ behaviour on 2026-11-21.
 
 - A selection's irregular outline follows its lines with the shared AI-mark
   and thumbnail flare. While the card is open, it eases into the focused
-  resting animation on completion without an outro or restart. Closing a
+  full, bright ring on completion without an outro or restart. Its colours
+  change slowly, but the travelling arc stops once work ends. Closing a
   finished card plays the shared outro. Closing while the AI is working
   leaves the working flare until completion, then plays the outro.
 - A run continues when its place is scrolled away or its card is closed.

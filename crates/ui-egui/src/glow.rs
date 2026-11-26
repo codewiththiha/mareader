@@ -73,7 +73,8 @@ pub fn paint(
     radius: f32,
     glow: Glow,
 ) {
-    paint_ring(ctx, painter, tokens, Ring::new(rect, radius), glow);
+    let time = ctx.input(|i| i.time);
+    paint_ring(ctx, painter, tokens, Ring::new(rect, radius), glow, time);
 }
 
 /// Paint the same flare around a closed, sampled selection contour.
@@ -85,6 +86,7 @@ pub(crate) fn paint_path(
     points: &[Pos2],
     reference: Rect,
     glow: Glow,
+    travel_time: f64,
 ) -> bool {
     let Some(ring) = Ring::path(points, reach(reference)) else {
         return false;
@@ -99,16 +101,23 @@ pub(crate) fn paint_path(
                 .intersects(clip)
         });
     if visible {
-        paint_ring(ctx, painter, tokens, ring, glow);
+        paint_ring(ctx, painter, tokens, ring, glow, travel_time);
     }
     visible
 }
 
-fn paint_ring(ctx: &Context, painter: &Painter, tokens: &Tokens, ring: Ring, glow: Glow) {
+fn paint_ring(
+    ctx: &Context,
+    painter: &Painter,
+    tokens: &Tokens,
+    ring: Ring,
+    glow: Glow,
+    travel_time: f64,
+) {
     let lap = (ring.length / PACE).clamp(LAP.0, LAP.1);
     let t = ctx.input(|i| i.time);
     let still = motion::reduced(ctx);
-    let phase = (t / f64::from(lap)).rem_euclid(1.0) as f32;
+    let phase = (travel_time / f64::from(lap)).rem_euclid(1.0) as f32;
     let breath = (TAU * (t / BREATH).rem_euclid(1.0) as f32).cos();
     let light = Light::new(&tokens.glow);
     let look = match still {
