@@ -16,25 +16,15 @@ pub(super) fn find(query: &str, allowed: impl Fn(Tab) -> bool) -> Vec<Entry> {
 }
 
 pub(super) fn field(ui: &mut Ui, query: &mut String) -> egui::Response {
-    Frame::new()
-        .inner_margin(Margin {
-            left: 24,
-            right: 24,
-            top: 0,
-            bottom: 10,
-        })
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            widgets::input(query)
-                .id(Id::new("settings-search-field"))
-                .icon(Icon::Search)
-                .hint("Search settings")
-                .label("Search settings")
-                .clearable(true)
-                .show(ui)
-                .response
-        })
-        .inner
+    widgets::input(query)
+        .id(Id::new("settings-search-field"))
+        .icon(Icon::Search)
+        .hint("Search settings")
+        .label("Search settings")
+        .clearable(true)
+        .compact()
+        .show(ui)
+        .response
 }
 
 pub(super) fn scroll(tab: Tab, query: &str, room: f32, changed: bool) -> egui::ScrollArea {

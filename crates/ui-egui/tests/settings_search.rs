@@ -162,3 +162,29 @@ fn page_shadow_jump_reveals_the_row() {
         .rect();
     assert!(row.center().y > 150.0 && row.center().y < 700.0, "{row:?}");
 }
+
+#[test]
+fn search_stays_at_top_of_the_sidebar_when_tabs_scroll() {
+    let mut h = reader(&[("pdf", "sample:5"), ("animations", "false")]);
+    h.set_size(egui::vec2(550.0, 700.0));
+    h.run_steps(3);
+    h.state_mut()
+        .queue(Sent::Engine(Command::OpenSettings(Tab::Appearance)));
+    h.run_steps(4);
+    let field = h.get_by_label("Search settings").rect();
+    let tab = h.get_by_role_and_label(Role::Button, "Appearance").rect();
+    let main = h.get_by_label("Colours").rect();
+    assert!(field.center().y < tab.center().y, "{field:?} {tab:?}");
+    assert!(field.right() < main.left(), "{field:?} {main:?}");
+    h.get_by_role_and_label(Role::Button, "Updates")
+        .scroll_to_me();
+    h.run_steps(50);
+    let scrolled = h.get_by_label("Search settings").rect();
+    assert!((field.center().y - scrolled.center().y).abs() < 1.0);
+    let updates = h.get_by_role_and_label(Role::Button, "Updates");
+    assert!(updates.rect().center().y < 650.0, "{:?}", updates.rect());
+    updates.click();
+    h.run_steps(5);
+    let after = h.get_by_label("Search settings").rect();
+    assert!((field.center().y - after.center().y).abs() < 1.0);
+}

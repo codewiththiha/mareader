@@ -162,7 +162,7 @@ impl SettingsWindow {
             ui.set_height(size.y);
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             ui.horizontal_top(|ui| {
-                self.nav(ui, size.y, &models, &current.read_aloud.engine);
+                let search_changed = self.nav(ui, size.y, &models, &current.read_aloud.engine);
                 let (line, _) = ui.allocate_exact_size(vec2(1.0, size.y), Sense::hover());
                 let edge = Stroke::new(1.0, t.line);
                 ui.painter().vline(line.center().x, line.y_range(), edge);
@@ -170,13 +170,12 @@ impl SettingsWindow {
                     ui.set_width(size.x - NAV_W - 1.0);
                     let tab = self.tab();
                     close = header(ui, tab);
-                    let field = search::field(ui, &mut self.query);
                     if self.query.trim().is_empty() && self.conditional {
                         search::conditional_note(ui);
                     }
                     // Short of the rounded corner, fade and all.
                     let room = ui.available_height() - FOOT_H;
-                    let scroll = search::scroll(tab, &self.query, room, field.changed());
+                    let scroll = search::scroll(tab, &self.query, room, search_changed);
                     let body = scroll.show(ui, |ui| {
                         let margin = Margin {
                             left: 24,
@@ -212,7 +211,7 @@ impl SettingsWindow {
         height: f32,
         models: &[&'static mareader_speech::Model],
         engine: &str,
-    ) {
+    ) -> bool {
         let t = Tokens::get(ui.ctx());
         let (rect, _) = ui.allocate_exact_size(vec2(NAV_W, height), Sense::hover());
         let r = t.radius_lg as u8;
@@ -228,16 +227,27 @@ impl SettingsWindow {
         let layout = Layout::top_down(Align::Min);
         let mut ui = ui.new_child(UiBuilder::new().max_rect(inner).layout(layout));
         ui.spacing_mut().item_spacing.y = 2.0;
+        let changed = search::field(&mut ui, &mut self.query).changed();
+        ui.add_space(8.0);
+        egui::ScrollArea::vertical()
+            .id_salt("settings-navigation")
+            .auto_shrink(false)
+            .max_height(ui.available_height())
+            .show(&mut ui, |ui| self.nav_tabs(ui, models, engine));
+        changed
+    }
+
+    fn nav_tabs(&mut self, ui: &mut Ui, models: &[&'static mareader_speech::Model], engine: &str) {
         let shown = self.tab();
         let mut group = None;
         let tabs: Vec<Tab> = Tab::ALL.into_iter().filter(|&t| self.lists(t)).collect();
         for tab in tabs {
             if group != Some(tab.group()) {
                 ui.add_space(if group.is_some() { 14.0 } else { 6.0 });
-                nav_heading(&mut ui, tab.group());
+                nav_heading(ui, tab.group());
                 group = Some(tab.group());
             }
-            if nav_row(&mut ui, tab, tab == shown).clicked()
+            if nav_row(ui, tab, tab == shown).clicked()
                 && (self.tab != tab || !self.query.is_empty())
             {
                 self.tab = tab;
@@ -247,7 +257,7 @@ impl SettingsWindow {
             }
             // The downloaded models fold under Read aloud.
             if tab == Tab::ReadAloud && !models.is_empty() {
-                self.engines(&mut ui, models, engine, shown);
+                self.engines(ui, models, engine, shown);
             }
         }
     }
