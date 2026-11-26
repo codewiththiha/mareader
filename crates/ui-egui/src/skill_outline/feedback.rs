@@ -7,6 +7,7 @@ use mareader_engine::skills::{Anchor, Ask, AskId};
 use mareader_workspace::PaneId;
 
 use crate::documents::DocumentsView;
+use crate::glow::Clock;
 
 #[derive(Clone)]
 pub(super) struct Place {
@@ -16,31 +17,6 @@ pub(super) struct Place {
     pub spans: Vec<(usize, Range<usize>)>,
     pub clock: Clock,
     pub cache: Vec<crate::glow::selection::Cache>,
-}
-
-#[derive(Clone, Copy)]
-pub(super) struct Clock {
-    pub travel: f64,
-    last: f64,
-    working: bool,
-}
-
-impl Clock {
-    fn new(now: f64, working: bool) -> Self {
-        Self {
-            travel: now,
-            last: now,
-            working,
-        }
-    }
-
-    fn advance(&mut self, now: f64, working: bool) {
-        if self.working {
-            self.travel += (now - self.last).max(0.0);
-        }
-        self.last = now;
-        self.working = working;
-    }
 }
 
 fn memory() -> Id {
@@ -84,14 +60,8 @@ pub(crate) fn show(ctx: &Context, asks: &[Ask], panes: &[(PaneId, Rect)], docs: 
         let active = working || focused;
         place.clock.advance(now, working);
         let id = Id::new(("skill-glow", place.id.0));
-        let glow = crate::glow::state(ctx, id, active);
-        if let Some(mut glow) = glow {
-            let whole = ctx.animate_bool_with_time(
-                id.with("focus-whole"),
-                focused || !active,
-                crate::motion::secs(ctx, 0.3),
-            );
-            glow.whole = glow.whole.max(whole);
+        let glow = crate::glow::retained_state(ctx, id, working, focused);
+        if let Some(glow) = glow {
             super::paint(ctx, place, panes, docs, (working, glow));
             if !active {
                 ctx.request_repaint_after_secs(1.0 / 60.0);

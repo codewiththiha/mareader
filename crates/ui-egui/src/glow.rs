@@ -65,6 +65,50 @@ pub fn state(ctx: &Context, id: Id, working: bool) -> Option<Glow> {
     (strength > 0.0).then_some(Glow { strength, whole })
 }
 
+/// The travel clock pauses in focus and resumes without a jump on retry.
+#[derive(Clone, Copy)]
+pub(crate) struct Clock {
+    pub(crate) travel: f64,
+    last: f64,
+    working: bool,
+}
+
+impl Clock {
+    pub(crate) fn new(now: f64, working: bool) -> Self {
+        Self {
+            travel: now,
+            last: now,
+            working,
+        }
+    }
+
+    pub(crate) fn advance(&mut self, now: f64, working: bool) {
+        if self.working {
+            self.travel += (now - self.last).max(0.0);
+        }
+        self.last = now;
+        self.working = working;
+    }
+}
+
+/// A retained glow opens into focus, then uses the usual exit on close.
+pub(crate) fn retained_state(
+    ctx: &Context,
+    id: Id,
+    working: bool,
+    focused: bool,
+) -> Option<Glow> {
+    let active = working || focused;
+    let mut glow = state(ctx, id, active)?;
+    let whole = ctx.animate_bool_with_time(
+        id.with("focus-whole"),
+        focused || !active,
+        motion::secs(ctx, OPEN),
+    );
+    glow.whole = glow.whole.max(whole);
+    Some(glow)
+}
+
 /// Paints `glow` round `rect` in the colours of `tokens`, its corners rounded
 /// by `radius`, and books the next frame. With Animations off it still moves.
 pub fn paint(
