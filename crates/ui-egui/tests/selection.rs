@@ -437,8 +437,8 @@ fn dragging_empty_space_pans_and_a_quick_release_flings() -> Out {
     // Text under the pointer first: the page's text layer loads.
     h.hover_at(edge(&layer, sheet, find(&layer, "Sphinx")?, false)?);
     h.run();
-    // The page's left margin, clear of the title bar: no text, no link.
-    let from = pos2(sheet.rect.left() + 6.0, sheet.rect.top() + 300.0);
+    // Stay clear of both the edge-hover strip and page text.
+    let from = pos2(sheet.rect.left() + 20.0, sheet.rect.top() + 300.0);
     h.hover_at(from);
     h.run();
     let cursor = h.output().platform_output.cursor_icon;

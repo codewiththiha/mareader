@@ -33,7 +33,7 @@ pub struct ChromeSettings {
     pub titlebar_pinned: bool,
     pub library_titlebar_pinned: bool,
     pub dictionary_titlebar_pinned: bool,
-    /// Retained for older settings; the sidebar now chooses its mode automatically.
+    /// Legacy setting, retained for compatibility; layout is automatic.
     pub sidebar_overlay: bool,
     /// The bars blur the page behind them; off, they are solid.
     pub glass: bool,
@@ -256,7 +256,7 @@ pub enum Highlight {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Player {
-    /// Just the bar; it opens only when asked, and then compact.
+    /// The bar opens only when asked, and then compact.
     Bar,
     /// The bar with one line of words streaming above it.
     #[default]
