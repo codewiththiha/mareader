@@ -210,17 +210,36 @@ mod tests {
         let doc = document(mareader_pdf::sample::pdf(2, "Sample"), 16.0);
         let (spot, text) = selected(&doc);
         let mut lib = Library::new(DeviceId(1));
-        let book = lib.record_open(Opened {
-            path: "/tmp/a.pdf".into(),
-            measure: Measure { content: ContentId(1), stamp: Default::default() },
-            format: Format::Pdf, title: "Sample".into(), author: None,
-        }, 1);
+        let book = lib.record_open(
+            Opened {
+                path: "/tmp/a.pdf".into(),
+                measure: Measure {
+                    content: ContentId(1),
+                    stamp: Default::default(),
+                },
+                format: Format::Pdf,
+                title: "Sample".into(),
+                author: None,
+            },
+            1,
+        );
         let record = NewAiSelection {
-            skill: "simplify".into(), name: "Simplify".into(), spot,
-            source: text, result: String::new(), pending: true, by: "Model".into(),
+            skill: "simplify".into(),
+            name: "Simplify".into(),
+            spot,
+            source: text,
+            result: String::new(),
+            pending: true,
+            by: "Model".into(),
         };
         let saved = lib.add_ai_selection(book, record, 2).unwrap();
-        let view = || View { pane: PaneId(1), doc: 1, book: Some(book), path: None, document: Arc::clone(&doc) };
+        let view = || View {
+            pane: PaneId(1),
+            doc: 1,
+            book: Some(book),
+            path: None,
+            document: Arc::clone(&doc),
+        };
         let mut state = State::default();
         assert!(state.refresh(vec![view()], &lib));
         let ask = state.asks().first().unwrap();
@@ -228,7 +247,9 @@ mod tests {
         assert!(matches!(ask.answer, Answer::Interrupted));
         assert!(matches!(&ask.anchor, Anchor::Text(spans) if !spans.is_empty()));
         assert!(!ask.open);
-        assert!(!state.refresh(vec![view()], &lib), "reload does not duplicate");
+        assert!(
+            !state.refresh(vec![view()], &lib),
+            "reload does not duplicate"
+        );
     }
-
 }

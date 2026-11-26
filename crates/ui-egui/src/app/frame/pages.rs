@@ -125,7 +125,7 @@ impl MareaderApp {
                 };
                 Some(crate::notes_panel::SelectionRow {
                     id: a.id,
-                    spot: a.spot?,
+                    spot: a.spot,
                     name: a.name.clone(),
                     source: a.source().to_owned(),
                     pinned: a.pinned.is_some(),
@@ -134,7 +134,7 @@ impl MareaderApp {
                 })
             })
             .collect();
-        ai_notes.sort_by_key(|a| crate::notes_panel::order(&a.spot));
+        ai_notes.sort_by_key(|a| a.spot.map(|s| crate::notes_panel::order(&s)));
         ai_notes
     }
 

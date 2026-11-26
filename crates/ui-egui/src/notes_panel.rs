@@ -46,7 +46,7 @@ pub struct Row {
 #[derive(Clone)]
 pub struct SelectionRow {
     pub id: AskId,
-    pub spot: Spot,
+    pub spot: Option<Spot>,
     pub name: String,
     pub source: String,
     pub pinned: bool,

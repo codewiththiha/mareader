@@ -44,22 +44,36 @@ behaviour on 2026-11-21.
 - **Pointing.** An arrow points at the selection, and the card rides the
   page as it scrolls, as the word card does. A card from the page menu
   points where the menu opened.
-- **Temporary.** Nothing is saved with highlights; closing the card, or
-  the book leaving its pane, forgets it. At most eight are kept.
+- **Close and reopen.** Closing a selection answer hides its card without
+  stopping the request. Once it has finished, the AI icon at the selection
+  reopens it. Unpinned answers stay for this app session; Remove deletes one.
+- **Pin.** Selection answers can be pinned with their book and reopen after
+  restart. New answers are pinned by default; Settings › Skills can change
+  that. A file opened outside the library must be added before it can be
+  pinned. The card distinguishes a pending or failed save from a saved one.
+  A saved request interrupted by app exit offers Try again. A failed retry
+  leaves the last successful saved answer intact.
+- **Annotations.** The Selection AI filter appears when the book has answers;
+  rows show pin state and reopen the selection. Changed or missing passages
+  cannot be opened at an unverified location.
+- **Page-menu cards** remain temporary: closing them ends their run and at
+  most eight are kept.
 - **Size.** Wider than the word card: from 360 to 560 points, growing with
   the square root of the text's length (`skill_card::width_for`). The body
   scrolls past 460 points, held at the end while words stream in.
 
 ## Running in the background
 
-- While a selection skill is running, a softly irregular outline follows its selected
-  line shapes, carrying the shared AI-mark and thumbnail light flare. On success,
-  failure or cancellation it opens into a ring and fades, as those glows do. It
-  is not a saved mark. Ask again brings it back. A run goes on when its place is
-  scrolled away; Close stops it.
+- A selection's irregular outline follows its lines with the shared AI-mark
+  and thumbnail flare. While the card is open, it eases into the focused
+  resting animation on completion without an outro or restart. Closing a
+  finished card plays the shared outro. Closing while the AI is working
+  leaves the working flare until completion, then plays the outro.
+- A run continues when its place is scrolled away or its card is closed.
+  Close is not Cancel; the corner stack's Cancel stops the work.
 - While the selection outline is away, the run is a line in the pane's AI stack
   (`docs/study-mode.md`, The corner stack): *Simplify · page 1* with
-  *Cancel*, which closes the card with a toast "Stopped Simplify".
+  *Cancel*, which stops the request.
 - Landing in sight, the card just shows. Landing out of sight, the stack
   keeps *Simplify ready* with **View**, which scrolls back to the text and
   shows the card. A failure shows red there for about 3 s, and a toast
@@ -76,7 +90,8 @@ skills"; one run there reads the whole page and answers in the same card.
 - Settings: `crates/settings/src/skills.rs` (`Skill`, `CustomSkill`,
   `Skills`, routes).
 - Engine: `crates/engine/src/skills.rs` (asks, anchors, answers) and
-  `session/skills.rs`; command `ai.skill`.
+  `session/skills.rs`, `session/skill_pinning.rs`, `skills/restore.rs`;
+  command `ai.skill`. `library/ai_selections.rs` stores pinned results.
 - Assist: `crates/assist/src/skill.rs` (prompts), `service/skills.rs`.
 - UI: `study/bar.rs` (Ask AI), `skill_menu.rs`, `skill_card.rs`, `app/skills.rs`,
   `settings_window/skills.rs`, `page_ai/menu/rows.rs`.

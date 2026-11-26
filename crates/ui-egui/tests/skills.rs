@@ -411,3 +411,46 @@ fn selection_answers_appear_in_annotations_and_reopen() {
     h.run_steps(30);
     assert!(h.state().skills().get(ask).unwrap().open);
 }
+
+#[test]
+fn a_closed_working_answer_flares_out_only_after_it_lands() {
+    use mareader_engine::skills::Action;
+    use mareader_settings::{PageTask, Skill};
+    use mareader_ui_egui::glow;
+    let mut h = reader(&[("pdf", "sample:5"), ("skill_answers", "silent"), ("animations", "true")]);
+    select(&mut h, "quick brown");
+    let pane = h.state().active_pane();
+    let skill = Skill::Builtin(PageTask::Simplify);
+    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Run { pane, skill })));
+    h.run_steps(60);
+    let ask = h.state().skills().asks().first().unwrap().id;
+    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Close(ask))));
+    h.run_steps(30);
+    assert!(glow::shown(&h.ctx) > 0);
+    assert!(h.query_by_label("Open selection AI answer").is_none());
+    h.state_mut().set_option("skill_answers", "echo").unwrap();
+    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Retry(ask))));
+    h.run_steps(6);
+    let id = egui::Id::new(("skill-glow", ask.0));
+    let fading = glow::state(&h.ctx, id, false).unwrap();
+    assert!(fading.strength > 0.0 && fading.whole > 0.0);
+    h.run_steps(60);
+    assert_eq!(glow::shown(&h.ctx), 0);
+    h.get_by_label("Open selection AI answer");
+}
+
+#[test]
+fn a_failed_open_answer_keeps_its_focused_flare() {
+    use mareader_engine::skills::Action;
+    use mareader_settings::{PageTask, Skill};
+    let mut h = reader(&[("pdf", "sample:5"), ("skill_answers", "failing")]);
+    select(&mut h, "quick brown");
+    let pane = h.state().active_pane();
+    let skill = Skill::Builtin(PageTask::Simplify);
+    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Run { pane, skill })));
+    h.run_steps(60);
+    let ask = h.state().skills().asks().first().unwrap();
+    assert!(matches!(ask.answer, Answer::Failed(_)));
+    assert!(ask.open);
+    assert!(mareader_ui_egui::glow::shown(&h.ctx) > 0);
+}
