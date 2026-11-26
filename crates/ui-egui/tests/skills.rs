@@ -381,3 +381,38 @@ fn selection_flare_uses_the_shared_outro_on_finish_and_close() {
     h.run_steps(60);
     assert_eq!(glow::shown(&h.ctx), 0, "the closed flare disappears");
 }
+
+#[test]
+fn a_failed_selection_flares_out_before_disappearing() {
+    use mareader_engine::skills::Action;
+    use mareader_settings::{PageTask, Skill};
+    use mareader_ui_egui::glow;
+
+    let mut h = reader(&[
+        ("pdf", "sample:12"),
+        ("skill_answers", "silent"),
+        ("animations", "true"),
+    ]);
+    select(&mut h, "quick brown");
+    let pane = h.state().active_pane();
+    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Run {
+        pane,
+        skill: Skill::Builtin(PageTask::Simplify),
+    })));
+    h.run_steps(60);
+    let ask = h.state().skills().asks().first().expect("the ask").id;
+    h.state_mut().set_option("skill_answers", "failing").unwrap();
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Retry(ask))));
+    h.run_steps(8);
+    assert!(matches!(
+        h.state().skills().get(ask).map(|a| &a.answer),
+        Some(Answer::Failed(_))
+    ));
+    let id = egui::Id::new(("skill-glow", ask.0));
+    let fading = glow::state(&h.ctx, id, false).expect("failure still glows");
+    assert!(fading.whole > 0.0 && fading.strength > 0.0);
+    assert!(glow::shown(&h.ctx) > 0, "failure's outro is painted");
+    h.run_steps(60);
+    assert_eq!(glow::shown(&h.ctx), 0, "the failure flare disappears");
+}
