@@ -1,9 +1,8 @@
 //! A skill's answer, in a card pointing at the text it was asked about.
 //!
 //! The card is plain: the skill's name, the answer, who gave it. It rides
-//! its page as AI cards do and hides while its place is scrolled away; it
-//! is never saved. Its width follows the text, so a short answer stays
-//! small and a long one reads in fewer lines. See `docs/selection-ai.md`.
+//! its page as AI cards do and hides while its place is scrolled away.
+//! Its width follows the text. See `docs/selection-ai.md`.
 
 use egui::{Align, Context, Id, Layout, Margin, Rect, RichText, ScrollArea, Ui, vec2};
 use mareader_engine::command::Command;
@@ -16,6 +15,8 @@ use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent};
 use crate::{motion, widgets, word_card};
+
+mod indicators;
 
 /// Narrowest and widest a card grows, before the pane's own width.
 pub const LEAST: f32 = 360.0;
@@ -60,17 +61,19 @@ pub fn show(
     ctx: &Context,
     asks: &[Ask],
     (panes, docs): (&[(PaneId, Rect)], DocumentsView<'_>),
+    clearance: (f32, f32),
     out: &mut Commands,
 ) {
     let t = Tokens::get(ctx);
     crate::skill_outline::show(ctx, asks, panes, docs);
+    let mut indicators = indicators::Indicators::new(clearance);
     for ask in asks {
         let Some((at, room)) = in_view(ask, panes, docs) else {
             continue;
         };
         if !ask.open {
             if ask.answer.landed() && matches!(ask.anchor, Anchor::Text(_)) {
-                indicator(ctx, ask, at, room, out);
+                indicators.push(ask, at, room);
             }
             continue;
         }
@@ -93,25 +96,7 @@ pub fn show(
         };
         bubble.show(ctx, &t, |ui, cap| card(ui, ask, cap, &t, out));
     }
-}
-
-/// A closed answer can be opened again at its selection.
-fn indicator(ctx: &Context, ask: &Ask, at: Rect, room: Rect, out: &mut Commands) {
-    let point = egui::pos2(
-        (at.right() + 4.0).clamp(room.left(), (room.right() - 24.0).max(room.left())),
-        (at.top() - 4.0).clamp(room.top(), (room.bottom() - 24.0).max(room.top())),
-    );
-    crate::z_order::area(
-        ctx,
-        crate::z_order::Tier::PageCard,
-        Id::new(("skill-indicator", ask.id.0)),
-    )
-    .fixed_pos(point)
-    .show(ctx, |ui| {
-        if widgets::small_icon_button(ui, Icon::Ai, "Open selection AI answer").clicked() {
-            out.push(Sent::Engine(Command::Skill(Action::Show(ask.id))));
-        }
-    });
+    indicators.show(ctx, out);
 }
 
 /// Where the card points, on screen: the asked text, or the page spot.

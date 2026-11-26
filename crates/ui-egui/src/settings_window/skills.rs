@@ -145,12 +145,13 @@ fn name_row(ui: &mut Ui, skill: &mut CustomSkill) -> bool {
             let label = format!("Remove {}", skill.title());
             gone = widgets::icon_button(ui, Icon::Remove, &label, false).clicked();
             ui.add_space(6.0);
+            let limit = CustomSkill::NEW_NAME_MAX.max(skill.name.chars().count());
             input(&mut skill.name)
                 .id(ui.id().with(("skill-name", skill.id.0)))
-                .hint("Name, as the menu shows it")
+                .hint("Name, up to 24 characters")
                 .label("Skill name")
                 .compact()
-                .char_limit(CustomSkill::NAME_MAX)
+                .char_limit(limit)
                 .width(ui.available_width())
                 .show(ui);
         },

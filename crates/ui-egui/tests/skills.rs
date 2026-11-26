@@ -374,7 +374,7 @@ fn selection_focus_stays_on_completion_and_close_plays_the_outro() {
     assert!(fading.whole > 0.0 && fading.strength > 0.0);
     h.run_steps(60);
     assert_eq!(glow::shown(&h.ctx), 0);
-    h.get_by_label("Open selection AI answer").click();
+    h.get_by_label("Open Simplify answer").click();
     h.run_steps(60);
     assert!(h.state().skills().get(ask).unwrap().open);
     assert!(glow::shown(&h.ctx) > 0);
@@ -451,7 +451,7 @@ fn a_closed_working_answer_flares_out_only_after_it_lands() {
         .queue(Sent::Engine(Command::Skill(Action::Close(ask))));
     h.run_steps(30);
     assert!(glow::shown(&h.ctx) > 0);
-    assert!(h.query_by_label("Open selection AI answer").is_none());
+    assert!(h.query_by_label("Open Simplify answer").is_none());
     h.state_mut().set_option("skill_answers", "echo").unwrap();
     h.state_mut()
         .queue(Sent::Engine(Command::Skill(Action::Retry(ask))));
@@ -461,7 +461,7 @@ fn a_closed_working_answer_flares_out_only_after_it_lands() {
     assert!(fading.strength > 0.0 && fading.whole > 0.0);
     h.run_steps(60);
     assert_eq!(glow::shown(&h.ctx), 0);
-    h.get_by_label("Open selection AI answer");
+    h.get_by_label("Open Simplify answer");
 }
 
 #[test]

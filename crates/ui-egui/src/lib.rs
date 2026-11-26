@@ -17,6 +17,7 @@ pub mod backdrop;
 pub mod bookmarks;
 pub mod bubble;
 pub mod checkbox;
+pub mod chrome_clearance;
 pub mod control;
 pub mod crossfade;
 pub mod dial_deck;

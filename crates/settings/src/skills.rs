@@ -69,6 +69,7 @@ pub struct CustomSkill {
 
 impl CustomSkill {
     pub const NAME_MAX: usize = 40;
+    pub const NEW_NAME_MAX: usize = 24;
     pub const PROMPT_MAX: usize = 4_000;
 
     /// Its name, or a stand-in while it has none.

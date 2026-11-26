@@ -17,7 +17,8 @@ behaviour on 2026-11-21.
   way (`skill_menu.rs`, over the shared `side_list.rs`, which the
   Dictionary picker's AI languages use too).
 - **Custom.** The reader's own, written in Settings › Skills: a name, a
-  prompt and, if wanted, a model. Up to 24.
+  prompt and, if wanted, a model. Up to 24 skills; new names are limited to
+  24 characters, while longer existing names stay intact.
 - **No chatter.** Every prompt, built in or custom, is joined to a fixed
   rule (`NO_CHATTER` in `crates/assist/src/prompt.rs`) that forbids
   greetings, "Okay, I got it", "I'm now going to…", preamble and closing
@@ -45,8 +46,9 @@ behaviour on 2026-11-21.
   page as it scrolls, as the word card does. A card from the page menu
   points where the menu opened.
 - **Close and reopen.** Closing a selection answer hides its card without
-  stopping the request. Once it has finished, the AI icon at the selection
-  reopens it. Unpinned answers stay for this app session; Remove deletes one.
+  stopping the request. Once it has finished, a rounded button at the selection
+  names the skill and reopens its answer. Unpinned answers stay for this app
+  session; Remove deletes one.
 - **Pin.** Selection answers can be pinned with their book and reopen after
   restart. New answers are pinned by default; Settings › Skills can change
   that. A file opened outside the library must be added before it can be

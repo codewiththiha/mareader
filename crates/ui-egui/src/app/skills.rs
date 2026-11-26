@@ -38,7 +38,10 @@ impl MareaderApp {
         }
         let docs = self.ui.documents.as_view(self.session.documents());
         let asks = self.session.skills().asks();
-        crate::skill_card::show(ctx, asks, (&self.ui.pane_rects, docs), out);
+        let bar = self.ui.titlebar.band_bottom(ctx);
+        let split = self.tree().len() > 1;
+        let reserve = crate::panes::close_reserve(split, theme::Tokens::get(ctx).control);
+        crate::skill_card::show(ctx, asks, (&self.ui.pane_rects, docs), (bar, reserve), out);
     }
 
     /// An answer landed: in sight it shows itself; out of sight, the AI

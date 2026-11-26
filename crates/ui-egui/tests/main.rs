@@ -43,6 +43,7 @@ mod settings_search;
 mod shell;
 mod sidebar_edge;
 mod sidebar_toggle;
+mod skill_indicators;
 mod skills;
 mod space;
 mod space_notes;

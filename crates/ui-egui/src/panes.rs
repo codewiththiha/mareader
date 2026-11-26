@@ -156,24 +156,21 @@ fn pane(
     }
     if ui.rect_contains_pointer(rect) {
         let size = window.control;
-        let top = rect.top().max(view.chrome_bottom) + CLOSE_INSET;
+        let top = crate::chrome_clearance::top(rect, view.chrome_bottom, CLOSE_INSET);
         let at = pos2(rect.right() - CLOSE_INSET - size, top);
-        let mut child =
-            ui.new_child(UiBuilder::new().max_rect(Rect::from_min_size(at, vec2(size, size))));
-        if widgets::icon_button(&mut child, Icon::Close, "Close pane", false).clicked() {
-            out.push(Sent::Engine(Command::ClosePane(id)));
+        let bounds = Rect::from_min_size(at, vec2(size, size));
+        if rect.contains_rect(bounds) {
+            let mut child = ui.new_child(UiBuilder::new().max_rect(bounds));
+            if widgets::icon_button(&mut child, Icon::Close, "Close pane", false).clicked() {
+                out.push(Sent::Engine(Command::ClosePane(id)));
+            }
         }
     }
 }
 
-/// Where `rect`'s top is clear of the window's controls: below the title
-/// bar's band and, while `split`, below the pane's close button.
-pub fn clear_top(rect: Rect, view: &PaneView, split: bool, control: f32) -> f32 {
-    let top = rect.top().max(view.chrome_bottom);
-    match split {
-        true => top + CLOSE_INSET + control,
-        false => top,
-    }
+/// Space under the pane close control, when the workspace is split.
+pub fn close_reserve(split: bool, control: f32) -> f32 {
+    if split { CLOSE_INSET + control } else { 0.0 }
 }
 
 /// A hairline where panes touch, so the split shows without a gap.
