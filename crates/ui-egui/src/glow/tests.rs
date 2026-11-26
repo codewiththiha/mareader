@@ -67,3 +67,57 @@ fn a_finish_lights_the_whole_ring() {
     assert_ne!(done.at(0.5, 800.0).0, later.at(0.5, 800.0).0);
     assert_eq!(done.at(0.5, 800.0).1, later.at(0.5, 800.0).1);
 }
+
+#[test]
+fn reduced_motion_holds_the_flare_and_snaps_focus_and_close() {
+    let ctx = Context::default();
+    crate::motion::set(&ctx, &mareader_settings::MotionSettings::default(), true);
+    let tokens = Tokens::new(&Appearance::default());
+    let id = Id::new("reduced-glow-test");
+    let mut looks = Vec::new();
+    for time in [0.0, 0.5] {
+        let mut out = ctx.run_ui(
+            egui::RawInput {
+                time: Some(time),
+                ..Default::default()
+            },
+            |ui| {
+                let ctx = ui.ctx();
+                let playing = retained_state(ctx, id, true, false).unwrap();
+                assert_eq!(
+                    playing,
+                    Glow {
+                        strength: 1.0,
+                        whole: 0.0
+                    }
+                );
+                let look = look_at(ctx, &tokens, playing, 500.0, time);
+                looks.push((look.head, look.drift, look.strength));
+            },
+        );
+        out.textures_delta.clear();
+    }
+    assert_eq!(looks[0].0, looks[1].0);
+    assert_eq!(looks[0].1, 0.0);
+    assert_eq!(looks[1].1, 0.0);
+    assert_ne!(looks[0].2, looks[1].2, "reduced motion breathes");
+    let mut out = ctx.run_ui(
+        egui::RawInput {
+            time: Some(1.0),
+            ..Default::default()
+        },
+        |ui| {
+            let ctx = ui.ctx();
+            let focused = retained_state(ctx, id, false, true).unwrap();
+            assert_eq!(
+                focused,
+                Glow {
+                    strength: 1.0,
+                    whole: 1.0
+                }
+            );
+            assert!(retained_state(ctx, id, false, false).is_none());
+        },
+    );
+    out.textures_delta.clear();
+}
