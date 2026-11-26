@@ -285,8 +285,8 @@ fn the_bar_highlights_and_underlines_and_a_click_offers_removal() -> Out {
     let (layer, sheet) = page(&h, 0)?;
     let quick = find(&layer, "quick brown")?;
     select(&mut h, 0, "quick brown");
-    // Half is offered only once the reader adds it to the menu.
-    assert!(h.query_by_label("Half highlight").is_none());
+    // All three highlighters are offered by default.
+    assert!(h.query_by_label("Half highlight").is_some());
     h.get_by_label("Highlight").click();
     h.run();
     let pane = h.state().active_pane();
@@ -322,7 +322,14 @@ fn asking_for_a_colour_each_time_never_offers_the_ai_look() -> Out {
     let mut h = reader(&[("pdf", "sample:5")]);
     let violet = h.state().settings().study.highlights.ai.color.to_hex();
     h.dial(|s| s.study.highlights.pick = PickColor::Ask);
-    h.dial(|s| s.study.highlights.bar.push(BarItem::Highlight(Pen::Half)));
+    assert!(
+        h.state()
+            .settings()
+            .study
+            .highlights
+            .bar
+            .contains(&BarItem::Highlight(Pen::Half))
+    );
     select(&mut h, 0, "quick");
     h.get_by_label("Highlight").click();
     h.run();
@@ -373,7 +380,10 @@ fn the_highlights_tab_sets_colours_the_menu_and_keeps_the_ai_look() {
     h.run();
     let look = &h.state().settings().study.highlights;
     assert_eq!(look.full, Rgb(0xff, 0xbe, 0x00));
-    // Half joins the menu; Copy moves down past Explain.
+    // Half can be hidden and restored; Copy moves down past Explain.
+    h.get_by_role_and_label(Role::CheckBox, "Half highlight")
+        .click();
+    h.run();
     h.get_by_role_and_label(Role::CheckBox, "Half highlight")
         .click();
     h.get_by_label("Move Copy down").click();

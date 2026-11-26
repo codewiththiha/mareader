@@ -24,7 +24,7 @@ fn select(h: &mut H, text: &str) {
 }
 
 #[test]
-fn ask_ai_opens_the_skills_then_shuts_them() {
+fn selection_menu_shows_skills_and_folds_custom_ones() {
     let mut h = reader(&[
         ("pdf", "sample:5"),
         ("skill_answers", "echo"),
@@ -32,16 +32,24 @@ fn ask_ai_opens_the_skills_then_shuts_them() {
     ]);
     h.run();
     select(&mut h, "quick brown");
-    assert!(h.query_by_label("Translate").is_none(), "shut at first");
-    h.get_by_label("Ask AI").click();
-    h.run();
-    for name in ["Translate", "Summarize", "Simplify", ROW] {
+    for name in ["Translate", "Summarize", "Simplify", ROW, "Manage skills"] {
         assert!(h.query_by_label(name).is_some(), "{name} is listed");
     }
     assert!(h.query_by_label("Quiz me").is_none(), "folded");
-    h.get_by_label("Ask AI").click();
-    h.run();
-    assert!(h.query_by_label(ROW).is_none(), "a second press shuts");
+}
+
+#[test]
+fn managing_skills_opens_the_existing_settings() {
+    let mut h = reader(&[("pdf", "sample:5")]);
+    select(&mut h, "quick brown");
+    h.get_by_label("Manage skills").click();
+    h.run_steps(10);
+    assert!(h.state().settings_window().is_open());
+    assert_eq!(
+        h.state().settings_window().tab(),
+        mareader_engine::settings::Tab::Skills
+    );
+    assert!(h.query_by_label("Add a skill").is_some());
 }
 
 #[test]
@@ -53,8 +61,6 @@ fn typing_finds_a_skill_and_escape_folds_then_shuts() {
     ]);
     h.run();
     select(&mut h, "quick brown");
-    h.get_by_label("Ask AI").click();
-    h.run();
     h.get_by_label(ROW).click();
     h.run();
     assert!(h.query_by_label("Quiz me").is_some(), "open beside the row");
@@ -83,8 +89,6 @@ fn enter_runs_the_first_skill_found() {
     ]);
     h.run();
     select(&mut h, "quick brown");
-    h.get_by_label("Ask AI").click();
-    h.run();
     h.get_by_label(ROW).click();
     h.run();
     // Both hold an e: the first is lit.
@@ -102,8 +106,6 @@ fn a_skill_answers_in_a_card_and_the_selection_goes() {
     let mut h = reader(&[("pdf", "sample:5"), ("skill_answers", "echo")]);
     h.run();
     select(&mut h, "quick brown");
-    h.get_by_label("Ask AI").click();
-    h.run();
     assert!(h.query_by_label("Custom skills").is_none(), "none written");
     h.get_by_label("Simplify").click();
     h.run_steps(30);

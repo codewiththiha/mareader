@@ -15,6 +15,7 @@ mod ai_job;
 mod ai_task;
 mod load;
 mod reader;
+mod selection_migration;
 mod skills;
 mod study;
 mod study_mode;
@@ -60,7 +61,7 @@ pub use words::{
 pub use workspace::{Corners, EdgeParking, LibraryClick, PaneLook, WorkspaceSettings};
 
 /// Bumped with every migration step in `load.rs`.
-pub const SCHEMA_VERSION: u32 = 9;
+pub const SCHEMA_VERSION: u32 = 10;
 
 /// The whole persisted state of the user's choices.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

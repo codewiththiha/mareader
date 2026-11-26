@@ -38,6 +38,7 @@ mod read_aloud_panes;
 mod reading;
 mod search;
 mod selection;
+mod selection_menu;
 mod shell;
 mod sidebar_edge;
 mod sidebar_toggle;

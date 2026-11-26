@@ -73,6 +73,9 @@ fn migrate(root: &mut Map<String, Value>, notes: &mut Vec<String>) {
     if stored < 9 {
         crate::skills::v8_to_v9(root);
     }
+    if stored < 10 {
+        crate::selection_migration::v9_to_v10(root);
+    }
     root.insert("version".to_owned(), json!(SCHEMA_VERSION));
 }
 

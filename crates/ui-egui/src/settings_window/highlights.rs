@@ -79,7 +79,10 @@ pub fn tab(ui: &mut Ui, h: &mut HighlightSettings, marks: Marks, out: &mut Comma
     });
     section(ui, "Selection menu");
     group(ui, |ui| menu(ui, &mut h.bar));
-    note(ui, "Hidden buttons stay off the selection bar.");
+    note(
+        ui,
+        "Hidden actions stay off the menu; order applies within each group.",
+    );
     other_marks(ui, h, marks, out);
 }
 

@@ -85,7 +85,7 @@ pub fn settled(session: &Session, pane: PaneId) -> Vec<Settled> {
     run.recalled.iter().map(settle).collect()
 }
 
-/// The selection bar while studying: no Explain, Ask AI or Look up.
+/// The selection menu while studying: no Explain, Skills or Look up.
 pub fn bar(look: &HighlightSettings, studying: bool) -> HighlightSettings {
     let mut look = look.clone();
     if studying {

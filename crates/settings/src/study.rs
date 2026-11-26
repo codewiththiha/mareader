@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 pub use mareader_library::Pen;
 
 use crate::clamp;
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GlossDensity {
@@ -69,7 +68,7 @@ impl BarItem {
             Self::Note => "Note",
             Self::ReadAloud => "Read aloud",
             Self::Highlight(pen) => pen.label(),
-            Self::Skills => "Ask AI",
+            Self::Skills => "Skills",
         }
     }
 }
@@ -211,6 +210,7 @@ impl Default for HighlightSettings {
                 BarItem::Note,
                 BarItem::Highlight(Pen::Full),
                 BarItem::Highlight(Pen::Underline),
+                BarItem::Highlight(Pen::Half),
             ],
             pick: PickColor::Default,
             ai: Reserved {

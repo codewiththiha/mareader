@@ -89,7 +89,7 @@ fn custom(ui: &mut Ui, ai: &mut AiSettings) {
     if count == 0 {
         note(
             ui,
-            "Write a prompt once; it shows in the selection menu's AI skills.",
+            "Write a prompt once; it shows in the selection menu's Skills section.",
         );
     }
     ui.add_space(10.0);

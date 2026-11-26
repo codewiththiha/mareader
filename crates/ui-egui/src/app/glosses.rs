@@ -148,6 +148,9 @@ impl MareaderApp {
             Gloss::Explain => out.push(Sent::Engine(Command::Explain(pane))),
             Gloss::LookUp => out.push(Sent::Engine(Command::LookUp(pane))),
             Gloss::Note => out.push(Sent::Engine(Command::Note(pane))),
+            Gloss::ManageSkills => out.push(Sent::Engine(Command::OpenSettings(
+                mareader_engine::settings::Tab::Skills,
+            ))),
             Gloss::Skill(skill) => {
                 let run = mareader_engine::skills::Action::Run { pane, skill };
                 out.push(Sent::Engine(Command::Skill(run)));
@@ -410,6 +413,7 @@ fn study_gloss(gloss: &Gloss) -> bool {
             | Gloss::LookUp
             | Gloss::Note
             | Gloss::Skill(_)
+            | Gloss::ManageSkills
             | Gloss::ReadAloud
             | Gloss::ReadFrom(..)
             | Gloss::Highlight(..)
