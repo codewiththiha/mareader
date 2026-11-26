@@ -41,6 +41,9 @@ pub fn in_view(
     panes: &[(PaneId, Rect)],
     docs: DocumentsView<'_>,
 ) -> Option<(Rect, Rect)> {
+    if docs.reading(ask.pane).is_none_or(|r| r.doc.get() != ask.doc) {
+        return None;
+    }
     let room = panes
         .iter()
         .find(|(p, _)| *p == ask.pane)
@@ -62,6 +65,12 @@ pub fn show(
         let Some((at, room)) = in_view(ask, panes, docs) else {
             continue;
         };
+        if !ask.open {
+            if ask.answer.landed() && matches!(ask.anchor, Anchor::Text(_)) {
+                indicator(ctx, ask, at, room, out);
+            }
+            continue;
+        }
         let key = mareader_engine::activity::Key::Skill {
             pane: ask.pane,
             ask: ask.id,
@@ -81,6 +90,21 @@ pub fn show(
         };
         bubble.show(ctx, &t, |ui, cap| card(ui, ask, cap, &t, out));
     }
+}
+
+/// A closed answer can be opened again at its selection.
+fn indicator(ctx: &Context, ask: &Ask, at: Rect, room: Rect, out: &mut Commands) {
+    let point = egui::pos2(
+        (at.right() + 4.0).clamp(room.left(), (room.right() - 24.0).max(room.left())),
+        (at.top() - 4.0).clamp(room.top(), (room.bottom() - 24.0).max(room.top())),
+    );
+    crate::z_order::area(ctx, crate::z_order::Tier::PageCard, Id::new(("skill-indicator", ask.id.0)))
+        .fixed_pos(point)
+        .show(ctx, |ui| {
+            if widgets::small_icon_button(ui, Icon::Ai, "Open selection AI answer").clicked() {
+                out.push(Sent::Engine(Command::Skill(Action::Show(ask.id))));
+            }
+        });
 }
 
 /// Where the card points, on screen: the asked text, or the page spot.

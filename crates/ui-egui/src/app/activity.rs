@@ -129,7 +129,7 @@ impl MareaderApp {
                 out.push(Sent::Engine(Command::Skill(Skill::Show(ask))));
             }
             (Button::Cancel, Key::Skill { ask, .. }) => {
-                out.push(Sent::Engine(Command::Skill(Skill::Close(ask))));
+                out.push(Sent::Engine(Command::Skill(Skill::Cancel(ask))));
             }
             (Button::Cancel, Key::Page { run, .. }) => page_ai(out, PageAi::StopRun(run)),
             (Button::Cancel, Key::Pages { pane, .. }) => page_ai(out, PageAi::StopPages(pane)),

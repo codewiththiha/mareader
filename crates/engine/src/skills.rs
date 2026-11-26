@@ -1,10 +1,8 @@
 //! Skills asked of a selection or a page: their runs and their answers.
 //!
 //! An ask keeps where it came from, so its card points there and rides the
-//! page. Nothing here is saved: an answer lives until its card is closed,
-//! its pane closes or turns to another book, or the app quits. A run goes on
-//! while its place is scrolled away; landing out of sight, the window offers
-//! a toast to go back to it. See `docs/selection-ai.md`.
+//! page. Selection answers remain in the session when their card is closed.
+//! See `docs/selection-ai.md`.
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -16,7 +14,7 @@ use mareader_study::pending::News;
 use mareader_study::skill::{Scripted, SkillAsk, SkillJob, Skiller};
 use mareader_workspace::PaneId;
 
-/// Asks kept at once; a new one past this closes the oldest.
+/// Page-menu asks kept at once; selections are retained for the session.
 pub const MOST: usize = 8;
 
 /// An ask's handle, unique for the session.
@@ -82,7 +80,7 @@ impl Answer {
 pub struct Ask {
     pub id: AskId,
     pub pane: PaneId,
-    /// The document it was asked in, by number; another in the pane drops it.
+    /// The document it was asked in, by number.
     pub doc: u64,
     pub skill: Skill,
     /// What the card calls it, as when asked.
@@ -91,6 +89,8 @@ pub struct Ask {
     /// The library book and durable selection spot, if available.
     pub book: Option<BookId>,
     pub spot: Option<Spot>,
+    /// Whether the answer card is open.
+    pub open: bool,
     pub answer: Answer,
     /// Who answers, as the card's small print names them.
     pub by: String,
@@ -120,8 +120,12 @@ pub enum Action {
     },
     /// Asks the same again.
     Retry(AskId),
-    /// Closes a card, stopping its run.
+    /// Hides a selection card; page-menu cards still close their run.
     Close(AskId),
+    /// Cancels a running request.
+    Cancel(AskId),
+    /// Removes a selection answer.
+    Remove(AskId),
     /// Goes back to a card's place, and shows it.
     Show(AskId),
 }
@@ -169,7 +173,7 @@ impl State {
         self.runner = runner;
     }
 
-    /// Starts `asked`; past [`MOST`], the oldest goes.
+    /// Starts `asked`; excess page-menu asks go oldest first.
     pub(crate) fn start(&mut self, asked: Asked) -> AskId {
         let id = AskId(self.next);
         self.next += 1;
@@ -187,13 +191,17 @@ impl State {
             anchor: asked.anchor,
             book: asked.book,
             spot: asked.spot,
+            open: true,
             answer: Answer::Waiting,
             by: self.runner.by(&key),
             text: asked.text,
             job: Some(job),
         });
-        let extra = self.asks.len().saturating_sub(MOST);
-        self.asks.drain(..extra);
+        while self.asks.iter().filter(|a| matches!(a.anchor, Anchor::Spot { .. })).count() > MOST {
+            if let Some(i) = self.asks.iter().position(|a| matches!(a.anchor, Anchor::Spot { .. })) {
+                self.asks.remove(i);
+            }
+        }
         id
     }
 
@@ -213,8 +221,27 @@ impl State {
         true
     }
 
-    /// Closes `id`; dropping its job stops the run.
+    /// Hides a selection card, leaving its run and answer intact.
     pub(crate) fn close(&mut self, id: AskId) -> bool {
+        let Some(ask) = self.asks.iter_mut().find(|a| a.id == id) else {
+            return false;
+        };
+        if matches!(ask.anchor, Anchor::Spot { .. }) {
+            return self.remove(id);
+        }
+        std::mem::replace(&mut ask.open, false)
+    }
+
+    pub(crate) fn show(&mut self, id: AskId) -> bool {
+        let Some(ask) = self.asks.iter_mut().find(|a| a.id == id) else {
+            return false;
+        };
+        ask.open = true;
+        true
+    }
+
+    /// Drops an ask and its job.
+    pub(crate) fn remove(&mut self, id: AskId) -> bool {
         let before = self.asks.len();
         self.asks.retain(|a| a.id != id);
         self.asks.len() != before
@@ -222,13 +249,13 @@ impl State {
 
     /// Drops the asks of `pane` not about `doc`; none drops them all.
     pub(crate) fn keep_pane(&mut self, pane: PaneId, doc: Option<u64>) {
-        self.asks.retain(|a| a.pane != pane || Some(a.doc) == doc);
+        self.asks.retain(|a| matches!(a.anchor, Anchor::Text(_)) || a.pane != pane || Some(a.doc) == doc);
     }
 
     /// Keeps the asks whose pane still reads their document; true if any went.
     pub(crate) fn keep_read(&mut self, reads: impl Fn(PaneId) -> Option<u64>) -> bool {
         let before = self.asks.len();
-        self.asks.retain(|a| reads(a.pane) == Some(a.doc));
+        self.asks.retain(|a| matches!(a.anchor, Anchor::Text(_)) || reads(a.pane) == Some(a.doc));
         self.asks.len() != before
     }
 

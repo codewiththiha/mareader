@@ -25,7 +25,7 @@ pub(crate) fn show(ctx: &Context, asks: &[Ask], panes: &[(PaneId, Rect)], docs: 
     let mut places = ctx
         .data(|d| d.get_temp::<Vec<Place>>(memory()))
         .unwrap_or_default();
-    for ask in asks.iter().filter(|a| !a.answer.landed()) {
+    for ask in asks.iter().filter(|a| !a.answer.landed() || a.open) {
         if let Anchor::Text(spans) = &ask.anchor
             && !places.iter().any(|p| p.id == ask.id)
         {
@@ -44,15 +44,24 @@ pub(crate) fn show(ctx: &Context, asks: &[Ask], panes: &[(PaneId, Rect)], docs: 
         {
             return false;
         }
-        let working = asks.iter().any(|a| a.id == place.id && !a.answer.landed());
-        let glow = crate::glow::state(ctx, Id::new(("skill-glow", place.id.0)), working);
-        if let Some(glow) = glow {
+        let ask = asks.iter().find(|a| a.id == place.id);
+        let working = ask.is_some_and(|a| !a.answer.landed());
+        let focused = ask.is_some_and(|a| a.open && a.answer.landed());
+        let active = working || focused;
+        let glow = crate::glow::state(ctx, Id::new(("skill-glow", place.id.0)), active);
+        if let Some(mut glow) = glow {
+            let rest = ctx.animate_bool_with_time(
+                Id::new(("skill-rest", place.id.0)),
+                focused,
+                crate::motion::secs(ctx, 1.0),
+            );
+            glow.strength *= 1.0 - 0.08 * rest;
             super::paint(ctx, place, panes, docs, (working, glow));
-            if !working {
+            if !active {
                 ctx.request_repaint_after_secs(1.0 / 60.0);
             }
         }
-        working || glow.is_some()
+        active || glow.is_some()
     });
     ctx.data_mut(|d| d.insert_temp(memory(), places));
 }

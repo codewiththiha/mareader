@@ -36,14 +36,17 @@ fn an_answer_lands_once_and_says_who_gave_it() {
 }
 
 #[test]
-fn a_silent_run_waits_and_closing_it_stops_it() {
+fn closing_a_selection_hides_it_without_stopping_the_run() {
     let mut state = scripted(Scripted::Silent);
     let id = state.start(asked(1, "x"));
-    assert_eq!(state.receive(), (Vec::new(), false));
-    assert_eq!(state.get(id).map(|a| &a.answer), Some(&Answer::Waiting));
     assert!(state.close(id));
-    assert!(!state.close(id), "closed once");
-    assert!(state.asks().is_empty());
+    assert!(!state.get(id).unwrap().open);
+    assert!(state.running());
+    assert!(!state.close(id));
+    assert!(state.show(id));
+    assert!(state.get(id).unwrap().open);
+    assert!(state.remove(id));
+    assert!(!state.running());
 }
 
 #[test]
@@ -62,25 +65,35 @@ fn a_failure_lands_and_retrying_asks_again() {
 }
 
 #[test]
-fn only_the_newest_are_kept_and_another_book_drops_its_pane_s() {
+fn selection_answers_are_not_evicted_or_lost_when_panes_change() {
     let mut state = scripted(Scripted::Silent);
     let first = state.start(asked(1, "first"));
     for _ in 0..MOST {
         state.start(asked(2, "more"));
     }
-    assert_eq!(state.asks().len(), MOST);
-    assert!(state.get(first).is_none(), "the oldest went");
-    let one = state.start(asked(1, "one"));
-    state.keep_pane(PaneId(1), Some(1));
-    assert!(state.get(one).is_some(), "same book: kept");
-    state.keep_pane(PaneId(1), Some(7));
-    assert!(state.get(one).is_none());
-    let two = state.start(asked(2, "two"));
-    assert!(!state.keep_read(|p| (p == PaneId(2)).then_some(1)));
-    assert!(state.get(two).is_some());
-    assert!(state.keep_read(|_| None), "a closed book drops them");
-    state.start(asked(2, "again"));
-    state.keep_pane(PaneId(2), None);
+    assert_eq!(state.asks().len(), MOST + 1);
+    state.keep_pane(PaneId(1), None);
+    state.keep_read(|_| None);
+    assert!(state.get(first).is_some());
+    assert!(state.running());
+}
+
+#[test]
+fn page_menu_asks_remain_transient_and_bounded() {
+    let mut state = scripted(Scripted::Silent);
+    let page = || Asked {
+        anchor: Anchor::Spot { page: 0, x: 0.0, y: 0.0, near: 0 },
+        ..asked(1, "page")
+    };
+    let first = state.start(page());
+    for _ in 0..MOST {
+        state.start(page());
+    }
+    assert!(state.get(first).is_none());
+    let last = state.asks().last().unwrap().id;
+    assert!(state.close(last));
+    assert!(state.get(last).is_none());
+    state.keep_pane(PaneId(1), None);
     assert!(state.asks().is_empty());
 }
 

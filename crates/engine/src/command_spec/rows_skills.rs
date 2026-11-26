@@ -8,7 +8,7 @@ use crate::command_spec::{CommandSpec, acts, json, reader_only, row};
 use crate::session::Session;
 use crate::skills::{Action, AskId};
 
-const ACTS: &str = "run|run_page|retry|close|show";
+const ACTS: &str = "run|run_page|retry|close|cancel|remove|show";
 
 /// The ask, its pane, the skill as `translate` or `custom-3`, the page
 /// and spot a page run points at, and the ask a card's buttons name.
@@ -46,6 +46,8 @@ fn parse(at: &Session, params: &Value) -> Result<Command, String> {
         },
         "retry" => Action::Retry(ask(params)?),
         "close" => Action::Close(ask(params)?),
+        "cancel" => Action::Cancel(ask(params)?),
+        "remove" => Action::Remove(ask(params)?),
         "show" => Action::Show(ask(params)?),
         other => return Err(acts::refused("ai.skill", other, ACTS)),
     };

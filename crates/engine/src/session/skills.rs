@@ -28,8 +28,9 @@ impl Session {
             } => self.skill_on_page(pane, (page, x, y), skill),
             Action::Retry(id) => self.skills.retry(id),
             Action::Close(id) => self.skills.close(id),
+            Action::Cancel(id) | Action::Remove(id) => self.skills.remove(id),
             Action::Show(id) => {
-                let known = self.skills.get(id).is_some();
+                let known = self.skills.show(id);
                 if known {
                     self.emit(Event::SkillShow(id));
                 }

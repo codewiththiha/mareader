@@ -238,11 +238,7 @@ fn running_selection_hands_feedback_to_the_corner_when_away() {
         ),
         "retry completed"
     );
-    assert_eq!(
-        mareader_ui_egui::glow::shown(&h.ctx),
-        0,
-        "the flare ends on completion"
-    );
+    assert!(mareader_ui_egui::glow::shown(&h.ctx) > 0, "the focused flare stays");
     h.state_mut()
         .set_option("skill_answers", "silent")
         .expect("silent answer");
@@ -257,12 +253,8 @@ fn running_selection_hands_feedback_to_the_corner_when_away() {
     h.state_mut()
         .queue(Sent::Engine(Command::Skill(Action::Close(ask))));
     h.run_steps(10);
-    assert!(!seen::shown(&h.ctx, key), "closed, the outline is gone");
-    assert_eq!(
-        mareader_ui_egui::glow::shown(&h.ctx),
-        0,
-        "closing removes the flare"
-    );
+    assert!(seen::shown(&h.ctx, key), "closing does not stop the working outline");
+    assert!(mareader_ui_egui::glow::shown(&h.ctx) > 0);
 }
 
 #[test]
@@ -326,105 +318,54 @@ fn a_paragraph_in_a_reflowed_book_has_a_running_outline() {
 }
 
 #[test]
-fn selection_flare_uses_the_shared_outro_on_finish_and_close() {
+fn selection_focus_stays_on_completion_and_close_plays_the_outro() {
     use mareader_engine::skills::Action;
     use mareader_settings::{PageTask, Skill};
     use mareader_ui_egui::glow;
 
-    let mut h = reader(&[
-        ("pdf", "sample:12"),
-        ("skill_answers", "silent"),
-        ("animations", "true"),
-    ]);
+    let mut h = reader(&[("pdf", "sample:12"), ("skill_answers", "silent"), ("animations", "true")]);
     select(&mut h, "quick brown");
     let pane = h.state().active_pane();
     let skill = Skill::Builtin(PageTask::Simplify);
-    h.state_mut()
-        .queue(Sent::Engine(Command::Skill(Action::Run { pane, skill })));
+    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Run { pane, skill })));
     h.run_steps(60);
-    let ask = h.state().skills().asks().first().expect("the ask").id;
-    assert!(glow::shown(&h.ctx) > 0, "working flare is visible");
+    let ask = h.state().skills().asks().first().unwrap().id;
     h.state_mut().set_option("skill_answers", "echo").unwrap();
-    h.state_mut()
-        .queue(Sent::Engine(Command::Skill(Action::Retry(ask))));
-    for _ in 0..12 {
-        h.run_steps(1);
-        if h.state()
-            .skills()
-            .get(ask)
-            .is_some_and(|a| a.answer.landed())
-        {
-            break;
-        }
-    }
-    assert!(
-        h.state()
-            .skills()
-            .get(ask)
-            .is_some_and(|a| a.answer.landed())
-    );
+    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Retry(ask))));
+    h.run_steps(60);
+    assert!(h.state().skills().get(ask).unwrap().answer.landed());
+    assert!(glow::shown(&h.ctx) > 0, "the focused flare continues");
+    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Close(ask))));
     h.run_steps(6);
+    assert!(!h.state().skills().get(ask).unwrap().open);
     let id = egui::Id::new(("skill-glow", ask.0));
-    let fading = glow::state(&h.ctx, id, false).expect("completion still glows");
-    assert!(fading.whole > 0.0, "the arc opens into a ring");
-    assert!(fading.strength > 0.0 && fading.strength < 1.0, "it fades");
-    assert!(glow::shown(&h.ctx) > 0, "the outro is actually painted");
-    h.run_steps(60);
-    assert_eq!(glow::shown(&h.ctx), 0, "the completed flare disappears");
-
-    h.state_mut().set_option("skill_answers", "silent").unwrap();
-    h.state_mut()
-        .queue(Sent::Engine(Command::Skill(Action::Retry(ask))));
-    h.run_steps(60);
-    assert!(glow::shown(&h.ctx) > 0, "retry restores the flare");
-    h.state_mut()
-        .queue(Sent::Engine(Command::Skill(Action::Close(ask))));
-    h.run_steps(6);
-    assert!(h.state().skills().get(ask).is_none(), "the ask was closed");
     let fading = glow::state(&h.ctx, id, false).expect("close still glows");
-    assert!(
-        fading.whole > 0.0 && fading.strength > 0.0,
-        "close flares out"
-    );
-    assert!(glow::shown(&h.ctx) > 0, "the closed ask's outro is painted");
+    assert!(fading.whole > 0.0 && fading.strength > 0.0);
     h.run_steps(60);
-    assert_eq!(glow::shown(&h.ctx), 0, "the closed flare disappears");
+    assert_eq!(glow::shown(&h.ctx), 0);
+    h.get_by_label("Open selection AI answer").click();
+    h.run_steps(60);
+    assert!(h.state().skills().get(ask).unwrap().open);
+    assert!(glow::shown(&h.ctx) > 0);
 }
 
 #[test]
-fn a_failed_selection_flares_out_before_disappearing() {
+fn closing_a_working_selection_keeps_it_running() {
     use mareader_engine::skills::Action;
     use mareader_settings::{PageTask, Skill};
-    use mareader_ui_egui::glow;
-
-    let mut h = reader(&[
-        ("pdf", "sample:12"),
-        ("skill_answers", "silent"),
-        ("animations", "true"),
-    ]);
+    let mut h = reader(&[("pdf", "sample:12"), ("skill_answers", "silent")]);
     select(&mut h, "quick brown");
     let pane = h.state().active_pane();
-    h.state_mut()
-        .queue(Sent::Engine(Command::Skill(Action::Run {
-            pane,
-            skill: Skill::Builtin(PageTask::Simplify),
-        })));
-    h.run_steps(60);
-    let ask = h.state().skills().asks().first().expect("the ask").id;
-    h.state_mut()
-        .set_option("skill_answers", "failing")
-        .unwrap();
-    h.state_mut()
-        .queue(Sent::Engine(Command::Skill(Action::Retry(ask))));
-    h.run_steps(8);
-    assert!(matches!(
-        h.state().skills().get(ask).map(|a| &a.answer),
-        Some(Answer::Failed(_))
-    ));
-    let id = egui::Id::new(("skill-glow", ask.0));
-    let fading = glow::state(&h.ctx, id, false).expect("failure still glows");
-    assert!(fading.whole > 0.0 && fading.strength > 0.0);
-    assert!(glow::shown(&h.ctx) > 0, "failure's outro is painted");
-    h.run_steps(60);
-    assert_eq!(glow::shown(&h.ctx), 0, "the failure flare disappears");
+    let skill = Skill::Builtin(PageTask::Simplify);
+    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Run { pane, skill })));
+    h.run_steps(30);
+    let ask = h.state().skills().asks().first().unwrap().id;
+    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Close(ask))));
+    h.run_steps(30);
+    assert!(h.state().skills().running());
+    assert!(!h.state().skills().get(ask).unwrap().open);
+    assert!(mareader_ui_egui::glow::shown(&h.ctx) > 0);
+    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Cancel(ask))));
+    h.run_steps(30);
+    assert!(h.state().skills().get(ask).is_none());
 }
