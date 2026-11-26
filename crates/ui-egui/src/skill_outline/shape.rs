@@ -51,7 +51,7 @@ pub(super) fn outline(lines: &[Rect]) -> Vec<Pos2> {
         let y = (a.bottom() + b.top()) * 0.5;
         edges.extend([pos2(b.left() - PAD, y), pos2(a.left() - PAD, y)]);
     }
-    round(&edges)
+    bend(&round(&edges))
 }
 
 /// Circular corners stay within half of each adjoining side.
@@ -102,6 +102,30 @@ fn round(edges: &[Pos2]) -> Vec<Pos2> {
     out
 }
 
+/// Bow long sides gently outward, with different handles on each side.
+fn bend(points: &[Pos2]) -> Vec<Pos2> {
+    let mut out = Vec::new();
+    for (i, (a, b)) in points.iter().zip(points.iter().cycle().skip(1)).enumerate() {
+        out.push(*a);
+        let side = *b - *a;
+        let len = side.length();
+        if len < 35.0 {
+            continue;
+        }
+        let normal = egui::vec2(side.y, -side.x) / len;
+        let k = ((i as u32).wrapping_mul(37).wrapping_add((len as u32).wrapping_mul(11))) % 17;
+        let first = 0.45 + (k % 5) as f32 * 0.22;
+        let second = 0.45 + ((k * 7 + 3) % 5) as f32 * 0.22;
+        let steps = ((len / 25.0).ceil() as usize).clamp(2, 64);
+        for j in 1..steps {
+            let t = j as f32 / steps as f32;
+            let curve = 3.0 * (1.0 - t) * t * ((1.0 - t) * first + t * second);
+            out.push(*a + side * t + normal * curve);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,6 +167,15 @@ mod tests {
             })
             .count();
         crosses % 2 == 1
+    }
+
+    #[test]
+    fn long_sides_bow_outward_without_mirroring() {
+        let straight = [pos2(0.0, 0.0), pos2(200.0, 0.0), pos2(200.0, 30.0), pos2(0.0, 30.0)];
+        let path = bend(&straight);
+        assert!(path.iter().any(|p| p.y < -0.3));
+        assert!(path.iter().any(|p| p.y > 30.3));
+        assert_eq!(path, bend(&straight));
     }
 
     #[test]
