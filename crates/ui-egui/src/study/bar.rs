@@ -156,7 +156,17 @@ fn contents(
                     .color(t.muted),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if widgets::small_icon_button(ui, Icon::Settings, "Manage skills").clicked() {
+                let manage = egui::Button::new(
+                    egui::RichText::new("Manage skills")
+                        .size(t.text_small)
+                        .color(t.muted),
+                )
+                .frame(false);
+                if ui
+                    .add(manage)
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked()
+                {
                     pressed = Some(BarPress::ManageSkills);
                 }
             });
