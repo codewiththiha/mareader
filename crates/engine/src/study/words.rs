@@ -127,7 +127,11 @@ pub fn find(layer: &TextLayer, block: usize, bytes: Range<usize>) -> Option<Rang
 }
 
 /// The characters on one page within a saved block-and-byte span.
-pub fn between(layer: &TextLayer, from: (usize, usize), to: (usize, usize)) -> Option<Range<usize>> {
+pub fn between(
+    layer: &TextLayer,
+    from: (usize, usize),
+    to: (usize, usize),
+) -> Option<Range<usize>> {
     let within = |i: usize| layer.place(i).is_some_and(|p| from <= p && p < to);
     let n = layer.places.len();
     let start = (0..n).find(|&i| within(i))?;
