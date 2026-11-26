@@ -323,3 +323,62 @@ fn page_edge_stack_avoids_page_ai_and_hover_lights_one_answer() {
     h.run_steps(60);
     assert_eq!(mareader_ui_egui::glow::shown(&h.ctx), 0);
 }
+
+#[test]
+fn separate_selections_align_to_their_own_middle_and_follow_scroll() {
+    use mareader_engine::skills::Action;
+    use mareader_settings::{PageTask, Skill, SkillId};
+    let mut h = reader(&[
+        ("pdf", "sample:5"),
+        ("skill_answers", "echo"),
+        ("custom_skills", "Quiz_me"),
+        ("animations", "false"),
+    ]);
+    let pane = h.state().active_pane();
+    for (text, skill) in [
+        ("quick brown", Skill::Builtin(PageTask::Simplify)),
+        ("This page was written", Skill::Custom(SkillId(1))),
+    ] {
+        select(&mut h, text);
+        h.state_mut()
+            .queue(Sent::Engine(Command::Skill(Action::Run { pane, skill })));
+        h.run_steps(30);
+        let id = h.state().skills().asks().last().unwrap().id;
+        h.state_mut()
+            .queue(Sent::Engine(Command::Skill(Action::Close(id))));
+        h.run_steps(20);
+    }
+    for (i, label) in [(0, "Open Simplify answer"), (1, "Open Quiz me answer")] {
+        let ask = &h.state().skills().asks()[i];
+        let Anchor::Text(spans) = &ask.anchor else {
+            panic!("not text")
+        };
+        let selection = h.state().documents().spans_rect(pane, spans).unwrap();
+        let button = h.get_by_label(label).rect();
+        assert!(
+            (button.center().y - selection.center().y).abs() < 1.0,
+            "{button:?} {selection:?}"
+        );
+        let sheet = h.state().documents().sheets(pane)[0];
+        assert!((button.right() - (sheet.shown.right() - 8.0)).abs() < 2.0);
+    }
+    let before = h.get_by_label("Open Simplify answer").rect().center().y;
+    h.hover_at(egui::pos2(450.0, 300.0));
+    h.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -100.0),
+        phase: egui::TouchPhase::Move,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.run_steps(40);
+    let ask = &h.state().skills().asks()[0];
+    let Anchor::Text(spans) = &ask.anchor else {
+        panic!("not text")
+    };
+    let selection = h.state().documents().spans_rect(pane, spans).unwrap();
+    let after = h.get_by_label("Open Simplify answer").rect().center().y;
+    assert!(
+        after < before - 20.0 && (after - selection.center().y).abs() < 1.0,
+        "{before} {after} {selection:?}"
+    );
+}

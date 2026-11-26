@@ -1,6 +1,6 @@
-//! Page-edge stacks for closed selection answers.
+//! Page-edge buttons for closed selection answers.
 
-use egui::{Align2, Context, Id, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
+use egui::{Align2, Context, Id, Rect, Sense, Stroke, StrokeKind, Ui, vec2};
 use mareader_engine::command::Command;
 use mareader_engine::skills::{Action, Anchor, Ask, AskId};
 use mareader_workspace::PaneId;
@@ -8,6 +8,8 @@ use mareader_workspace::PaneId;
 use crate::documents::DocumentsView;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent};
+
+mod layout;
 
 const HEIGHT: f32 = 28.0;
 const GAP: f32 = 4.0;
@@ -19,6 +21,7 @@ struct Item<'a> {
     ask: &'a Ask,
     page: usize,
     room: Rect,
+    center: f32,
 }
 
 pub(super) struct Indicators<'a> {
@@ -57,15 +60,20 @@ impl<'a> Indicators<'a> {
             return;
         };
         for sheet in docs.sheets(ask.pane) {
-            if !spans.iter().any(|(page, _)| *page == sheet.page) {
-                continue;
-            }
+            let at = spans
+                .iter()
+                .filter(|(page, _)| *page == sheet.page)
+                .filter_map(|(_, range)| docs.hit_box(ask.pane, sheet.page, range.clone()))
+                .reduce(|a, b| a.union(b));
             let room = sheet.rect.intersect(sheet.shown).intersect(clear);
-            if room.is_positive() {
+            if let Some(at) = at.filter(|r| r.is_finite())
+                && room.is_positive()
+            {
                 self.items.push(Item {
                     ask,
                     page: sheet.page,
                     room,
+                    center: at.center().y,
                 });
                 break;
             }
@@ -118,44 +126,23 @@ impl<'a> Indicators<'a> {
         if width < MIN_WIDTH {
             return;
         }
-        let top = bubbles
-            .iter()
-            .fold(room.top() + INSET, |y, b| y.max(b.bottom() + GAP));
-        let (right, top) = if top + HEIGHT <= room.bottom() - INSET {
-            (room.right() - INSET, top)
-        } else if let Some(left) = bubbles.iter().map(|r| r.left()).reduce(f32::min) {
-            (left - GAP, room.top() + INSET)
-        } else {
-            return;
-        };
-        if right - width < room.left() {
-            return;
-        }
-        let slots = (((room.bottom() - INSET - top + GAP) / (HEIGHT + GAP)).floor() as usize)
-            .min(items.len());
-        if slots == 0 {
-            return;
-        }
-        let direct = if items.len() > slots {
-            slots - 1
-        } else {
-            slots
-        };
-        for (i, item) in items.iter().take(direct).enumerate() {
-            let rect = Rect::from_min_size(
-                pos2(right - width, top + i as f32 * (HEIGHT + GAP)),
-                vec2(width, HEIGHT),
-            );
-            if button(ctx, item.ask, rect, &t, out) {
+        let centers: Vec<_> = items.iter().map(|item| item.center).collect();
+        let layout = layout::arrange(room, width, &centers, &bubbles);
+        for (item, rect) in items.iter().zip(&layout.buttons) {
+            if button(ctx, item.ask, *rect, &t, out) {
                 hovered.push(item.ask.id);
             }
         }
-        if direct < items.len() {
-            let rect = Rect::from_min_size(
-                pos2(right - width, top + direct as f32 * (HEIGHT + GAP)),
-                vec2(width, HEIGHT),
+        if let Some(rect) = layout.more {
+            more_button(
+                ctx,
+                key,
+                rect,
+                &items[layout.buttons.len()..],
+                &t,
+                out,
+                hovered,
             );
-            more_button(ctx, key, rect, &items[direct..], &t, out, hovered);
         }
     }
 }

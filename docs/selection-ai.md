@@ -46,9 +46,9 @@ behaviour on 2026-11-21.
   page as it scrolls, as the word card does. A card from the page menu
   points where the menu opened.
 - **Close and reopen.** Closing a selection answer hides its card without
-  stopping the request. Once it has finished, a button in the page-edge stack
+  stopping the request. Once it has finished, a button at the page edge, level with the selection,
   names the skill and reopens its answer. Hovering it softly lights the related
-  selection. The stack stays clear of the page AI number buttons. Unpinned answers stay for this app
+  selection. The buttons stay clear of page AI number buttons and each other. Unpinned answers stay for this app
   session; Remove deletes one.
 - **Pin.** Selection answers can be pinned with their book and reopen after
   restart. New answers are pinned by default; Settings › Skills can change
