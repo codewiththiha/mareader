@@ -1,9 +1,9 @@
 //! A book's scripts: the pages they made in a pane, and the clicks sent.
 
 use egui::{Context, Id, Margin, Pos2, Rect, RichText};
+use mareader_engine::scripts::Paged;
 #[cfg(not(target_arch = "wasm32"))]
 use mareader_engine::scripts::{Ask, Field};
-use mareader_engine::scripts::Paged;
 
 use crate::bubble::{Bubble, Side};
 use crate::selection::Sheet;
