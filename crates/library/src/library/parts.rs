@@ -3,10 +3,13 @@
 use std::collections::BTreeMap;
 
 use crate::ai_pages::AiPage;
+use crate::ai_selections::AiSelection;
 use crate::book::{Book, State};
 use crate::clock::Clock;
 use crate::folder::Folder;
-use crate::id::{AiPageId, BookId, FolderId, LinkId, MarkId, ShelfId, SightingId, WordId};
+use crate::id::{
+    AiPageId, AiSelectionId, BookId, FolderId, LinkId, MarkId, ShelfId, SightingId, WordId,
+};
 use crate::link::Link;
 use crate::marks::Mark;
 use crate::shelves::{Membership, Shelf};
@@ -26,6 +29,7 @@ pub(crate) struct Parts {
     pub members: BTreeMap<(ShelfId, BookId), Membership>,
     pub marks: BTreeMap<MarkId, Mark>,
     pub ai_pages: BTreeMap<AiPageId, AiPage>,
+    pub ai_selections: BTreeMap<AiSelectionId, AiSelection>,
     pub words: BTreeMap<WordId, WordState>,
     pub sightings: BTreeMap<SightingId, WordSighting>,
 }
@@ -43,6 +47,7 @@ impl Parts {
             members: BTreeMap::new(),
             marks: BTreeMap::new(),
             ai_pages: BTreeMap::new(),
+            ai_selections: BTreeMap::new(),
             words: BTreeMap::new(),
             sightings: BTreeMap::new(),
         }

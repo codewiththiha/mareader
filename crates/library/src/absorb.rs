@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::de::DeserializeOwned;
 
 use crate::ai_pages::AiPage;
+use crate::ai_selections::AiSelection;
 use crate::book::{Book, State};
 use crate::clock::{Clock, Field, Stamp};
 use crate::extra::Extra;
@@ -99,6 +100,15 @@ impl Library {
                 let id = page.id;
                 Some(merge_into(self.ai_pages.get(&id), page).is_some_and(|p| {
                     self.ai_pages.insert(id, p);
+                    true
+                }))
+            }
+            Kind::AiSelection => {
+                let selection: AiSelection = parse(row)?;
+                self.clock.observe(selection.latest());
+                let id = selection.id;
+                Some(merge_into(self.ai_selections.get(&id), selection).is_some_and(|s| {
+                    self.ai_selections.insert(id, s);
                     true
                 }))
             }
@@ -219,6 +229,7 @@ impl Library {
     pub(crate) fn move_data(&mut self, gone: BookId, keeper: BookId, at: Stamp) {
         self.move_marks(gone, keeper, at);
         self.move_ai_pages(gone, keeper, at);
+        self.move_ai_selections(gone, keeper, at);
         self.move_study(gone, keeper, at);
     }
 

@@ -57,7 +57,7 @@ pub(super) fn show(ctx: &Context, model: &Library, asked: Asked<'_>, t: &Tokens)
                 (false, 1) => "Kept for when the book comes back.",
                 (false, _) => "Kept for when the books come back.",
             };
-            let label = "Erase highlights, AI pages and reading position";
+            let label = "Erase highlights, AI answers and reading position";
             modal::switch_card(ui, &mut on.forget, label, note, Some(t.danger), t);
         }
         let erase = data && on.forget;

@@ -45,6 +45,8 @@ pub struct Receipt {
     pub marks: usize,
     /// Saved AI page results.
     pub ai_pages: usize,
+    /// Saved AI selection answers.
+    pub ai_selections: usize,
     /// Words studied in them.
     pub words: usize,
     /// Their formats, each once, and their measured size.
@@ -68,7 +70,11 @@ pub struct Removing {
 impl Receipt {
     /// Whether the data switch means anything: marks or a place.
     pub fn has_data(&self) -> bool {
-        self.marks > 0 || self.ai_pages > 0 || self.words > 0 || self.positions > 0
+        self.marks > 0
+            || self.ai_pages > 0
+            || self.ai_selections > 0
+            || self.words > 0
+            || self.positions > 0
     }
 }
 
@@ -143,6 +149,7 @@ impl Library {
             receipt.copies += usize::from(!fate.copies.is_empty());
             receipt.marks += self.marks_on(id).count();
             receipt.ai_pages += self.ai_pages(id).len();
+            receipt.ai_selections += self.ai_selections(id).len();
             receipt.words += self.sightings(id).len();
             let book = self.book(id);
             let placed = |c| self.folders.values().any(|f| f.placed.contains(&c));
@@ -305,6 +312,11 @@ impl Library {
             page.alive = Field::new(false, at);
             page.result.clear();
             page.source.clear();
+        }
+        for selection in self.ai_selections.values_mut_where(|s| s.book.value == id) {
+            selection.alive = Field::new(false, at);
+            selection.source.clear();
+            selection.result.clear();
         }
         self.forget_sightings(id, at);
         if let Some(state) = self.states.get_mut(&id) {

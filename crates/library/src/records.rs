@@ -6,6 +6,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::ai_pages::AiPage;
+use crate::ai_selections::AiSelection;
 use crate::book::{Book, Location, State};
 use crate::clock::Clock;
 use crate::folder::Folder;
@@ -35,6 +36,8 @@ pub enum Kind {
     Link,
     /// A page the AI summarized, translated or simplified.
     AiPage,
+    /// An AI answer on a text selection.
+    AiSelection,
     /// A word studied, and where it stands, in every book.
     Word,
     /// A word studied in one book.
@@ -54,6 +57,7 @@ impl Kind {
             Self::Folder => "folder",
             Self::Link => "link",
             Self::AiPage => "ai_page",
+            Self::AiSelection => "ai_selection",
             Self::Word => "word",
             Self::Sighting => "sighting",
         }
@@ -72,6 +76,7 @@ impl Kind {
             Self::Folder,
             Self::Link,
             Self::AiPage,
+            Self::AiSelection,
             Self::Word,
             Self::Sighting,
         ];
@@ -88,6 +93,7 @@ impl Kind {
             Self::Mark,
             Self::Link,
             Self::AiPage,
+            Self::AiSelection,
             Self::Word,
             Self::Sighting,
         ];
@@ -195,6 +201,13 @@ fn changes(library: &Library, dirty: &Dirty) -> Changes {
     {
         out.put(Kind::AiPage, page.id.to_string(), page);
     }
+    for selection in dirty
+        .ai_selections
+        .iter()
+        .filter_map(|id| library.ai_selections.get(id))
+    {
+        out.put(Kind::AiSelection, selection.id.to_string(), selection);
+    }
     for word in dirty.words.iter().filter_map(|id| library.words.get(id)) {
         out.put(Kind::Word, word.id.to_string(), word);
     }
@@ -248,6 +261,9 @@ pub(crate) fn assemble(rows: Vec<Row>, clock: Clock) -> (Parts, usize) {
             }),
             Kind::AiPage => parse::<AiPage>(&row).map(|p| {
                 parts.ai_pages.insert(p.id, p);
+            }),
+            Kind::AiSelection => parse::<AiSelection>(&row).map(|s| {
+                parts.ai_selections.insert(s.id, s);
             }),
             Kind::Word => parse::<WordState>(&row).map(|w| {
                 parts.words.insert(w.id, w);
