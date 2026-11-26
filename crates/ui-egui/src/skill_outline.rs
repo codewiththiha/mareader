@@ -53,7 +53,11 @@ pub(crate) fn show(ctx: &Context, ask: &Ask, panes: &[(PaneId, Rect)], docs: Doc
             .collect();
         let painter = painter.with_clip_rect(clip);
         for group in groups(&lines) {
-            let points = rounded(&contour(group), group);
+            let seed = ask.id.0
+                ^ (sheet.page as u64).wrapping_mul(0x9e3779b97f4a7c15)
+                ^ (range.start as u64).wrapping_mul(0xbf58476d1ce4e5b9)
+                ^ (range.end as u64).wrapping_mul(0x94d049bb133111eb);
+            let points = rounded(&contour(group), group, seed);
             visible |= crate::glow::paint_path(ctx, &painter, &tokens, &points, glow);
         }
     }
@@ -119,13 +123,13 @@ fn contour(lines: &[Rect]) -> Vec<Pos2> {
 }
 
 /// Round the contour, then gently bend it without moving the text.
-fn rounded(points: &[Pos2], lines: &[Rect]) -> Vec<Pos2> {
-    let smooth = smooth(points);
-    organic(&smooth, lines)
+fn rounded(points: &[Pos2], lines: &[Rect], seed: u64) -> Vec<Pos2> {
+    let smooth = smooth(points, seed);
+    organic(&smooth, lines, seed)
 }
 
 /// Quadratic turns connect the sides with a continuous tangent.
-fn smooth(points: &[Pos2]) -> Vec<Pos2> {
+fn smooth(points: &[Pos2], seed: u64) -> Vec<Pos2> {
     let mut corners = Vec::new();
     for &point in points {
         if corners
@@ -147,7 +151,8 @@ fn smooth(points: &[Pos2]) -> Vec<Pos2> {
         let next = corners[(i + 1) % corners.len()];
         let a = prev - at;
         let b = next - at;
-        let r = 10.0_f32.min(a.length() * 0.42).min(b.length() * 0.42);
+        let radius = 6.0 + 4.0 * random_unit(seed ^ (i as u64).wrapping_mul(0x9e3779b97f4a7c15));
+        let r = radius.min(a.length() * 0.42).min(b.length() * 0.42);
         let from = at + a.normalized() * r;
         let to = at + b.normalized() * r;
         for step in 0..=5 {
@@ -166,8 +171,8 @@ fn smooth(points: &[Pos2]) -> Vec<Pos2> {
     out
 }
 
-/// Two closed waves vary the line without a moving or visible seam.
-fn organic(points: &[Pos2], lines: &[Rect]) -> Vec<Pos2> {
+/// Irregular, closed bends stay fixed while the light moves.
+fn organic(points: &[Pos2], lines: &[Rect], seed: u64) -> Vec<Pos2> {
     if points.len() < 3 {
         return Vec::new();
     }
@@ -180,7 +185,7 @@ fn organic(points: &[Pos2], lines: &[Rect]) -> Vec<Pos2> {
     if !length.is_finite() || length < 0.01 {
         return Vec::new();
     }
-    let waves = (length / 100.0).round().clamp(1.0, 60.0);
+    let drift = Drift::new(seed, length);
     let mut distance = 0.0;
     let mut out = Vec::with_capacity(points.len());
     for (i, at) in points.iter().copied().enumerate() {
@@ -197,13 +202,64 @@ fn organic(points: &[Pos2], lines: &[Rect]) -> Vec<Pos2> {
         } else {
             2.3
         };
-        let phase = std::f32::consts::TAU * distance / length;
-        let wave = 1.65 * (phase * waves + 0.35).sin() + 0.65 * (phase * (waves + 2.0) + 1.2).sin();
-        let delta = normal * wave.clamp(-limit, limit);
+        let bend = drift.at(distance / length);
+        let delta = normal * bend.clamp(-limit, limit);
         out.push(at + keep_clear(at, delta, lines));
         distance += distances.get(i).copied().unwrap_or(0.0);
     }
     out
+}
+
+/// A repeatable mix, independent of frame time and screen position.
+fn random_unit(seed: u64) -> f32 {
+    let mut x = seed.wrapping_add(0x9e3779b97f4a7c15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94d049bb133111eb);
+    let bits = (x ^ (x >> 31)) >> 40;
+    bits as f32 / 16_777_215.0
+}
+
+/// Unevenly spaced bends, joined smoothly around the closed contour.
+struct Drift {
+    knots: Vec<(f32, f32)>,
+}
+
+impl Drift {
+    fn new(seed: u64, length: f32) -> Self {
+        let count = (length / 95.0).round().clamp(5.0, 64.0) as usize;
+        let mut knots = Vec::with_capacity(count);
+        let mut at = 0.0;
+        for i in 0..count {
+            let id = seed ^ (i as u64).wrapping_mul(0x9e3779b97f4a7c15);
+            let amount = random_unit(id ^ 0x7f4a7c15);
+            let sign = if random_unit(id ^ 0x94d049bb) < 0.5 {
+                -1.0
+            } else {
+                1.0
+            };
+            knots.push((at, sign * (0.4 + 0.6 * amount) * 2.3));
+            at += 0.6 + 0.8 * random_unit(id ^ 0xbf58476d);
+        }
+        for (position, _) in &mut knots {
+            *position /= at;
+        }
+        Self { knots }
+    }
+
+    fn at(&self, share: f32) -> f32 {
+        let share = share.rem_euclid(1.0);
+        let next = self.knots.partition_point(|(x, _)| *x <= share);
+        let Some(&(from, a)) = self.knots.get(next.saturating_sub(1)) else {
+            return 0.0;
+        };
+        let Some(&(_, first)) = self.knots.first() else {
+            return 0.0;
+        };
+        let (to, b) = self.knots.get(next).copied().unwrap_or((1.0, first));
+        let t = ((share - from) / (to - from)).clamp(0.0, 1.0);
+        let eased = t * t * (3.0 - 2.0 * t);
+        a + (b - a) * eased
+    }
 }
 
 /// Shorten a bend before it reaches a selected line.
@@ -267,7 +323,7 @@ mod tests {
         );
         assert!(p.contains(&pos2(23.0, 14.0)), "first line's indent: {p:?}");
         assert_eq!(groups(&lines).len(), 1);
-        assert!(!rounded(&p, &lines).is_empty());
+        assert!(!rounded(&p, &lines, 1).is_empty());
     }
 
     #[test]
@@ -278,8 +334,8 @@ mod tests {
             pos2(140.0, 40.0),
             pos2(0.0, 40.0),
         ];
-        let smooth = smooth(&corners);
-        let bent = organic(&smooth, &[]);
+        let smooth = smooth(&corners, 1);
+        let bent = organic(&smooth, &[], 1);
         assert_eq!(smooth.len(), bent.len());
         assert!(
             corners.iter().all(|c| !smooth.contains(c)),
@@ -306,8 +362,37 @@ mod tests {
         assert!(shifts.iter().any(|s| *s > 1.0), "actually hand-shaped");
         assert_eq!(
             bent,
-            organic(&smooth, &[]),
+            organic(&smooth, &[], 1),
             "no random frame-to-frame jitter"
+        );
+    }
+
+    #[test]
+    fn bends_are_seamless_irregular_and_seeded() {
+        let a = Drift::new(72, 800.0);
+        let b = Drift::new(73, 800.0);
+        assert!((a.at(0.0) - a.at(1.0)).abs() < 1e-5, "the seam closes");
+        assert!(
+            (a.at(0.00001) - a.at(0.99999)).abs() < 0.001,
+            "the seam is smooth"
+        );
+        let samples: Vec<_> = (0..20).map(|i| a.at(i as f32 / 20.0)).collect();
+        assert!(samples.iter().all(|v| v.abs() <= 2.3));
+        assert!(
+            samples
+                .iter()
+                .enumerate()
+                .any(|(i, v)| (v - samples[(i + 10) % 20]).abs() > 0.5),
+            "not mirrored"
+        );
+        assert!(
+            (0..20).any(|i| (a.at(i as f32 / 20.0) - b.at(i as f32 / 20.0)).abs() > 0.5),
+            "different selections vary"
+        );
+        assert_eq!(
+            a.knots,
+            Drift::new(72, 800.0).knots,
+            "stable between frames"
         );
     }
 
@@ -318,7 +403,7 @@ mod tests {
             line(0.0, 16.0, 110.0),
             line(0.0, 32.0, 50.0),
         ];
-        let outline = rounded(&contour(&lines), &lines);
+        let outline = rounded(&contour(&lines), &lines, 1);
         assert!(!outline.is_empty());
         assert!(
             outline
@@ -332,13 +417,18 @@ mod tests {
         for gap in [0.2, 1.0, 4.0, 10.0] {
             for (x, w) in [(0.0, 110.0), (25.0, 70.0), (85.0, 60.0)] {
                 let lines = [line(0.0, 0.0, 110.0), line(x, 12.0 + gap, w)];
-                let outline = rounded(&contour(&lines), &lines);
-                assert!(!outline.is_empty());
-                let inside: Vec<_> = outline
-                    .iter()
-                    .filter(|p| lines.iter().any(|l| l.contains(**p)))
-                    .collect();
-                assert!(inside.is_empty(), "gap {gap} x {x} w {w}: {inside:?}");
+                for seed in 0..16 {
+                    let outline = rounded(&contour(&lines), &lines, seed);
+                    assert!(!outline.is_empty());
+                    let inside: Vec<_> = outline
+                        .iter()
+                        .filter(|p| lines.iter().any(|l| l.contains(**p)))
+                        .collect();
+                    assert!(
+                        inside.is_empty(),
+                        "gap {gap} x {x} w {w} seed {seed}: {inside:?}"
+                    );
+                }
             }
         }
     }
@@ -352,6 +442,6 @@ mod tests {
         ];
         assert_eq!(groups(&lines).len(), 3);
         assert!(groups(&[]).is_empty());
-        assert!(rounded(&[], &[]).is_empty());
+        assert!(rounded(&[], &[], 1).is_empty());
     }
 }
