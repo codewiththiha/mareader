@@ -1,4 +1,4 @@
-//! Shared pane clearance for controls under the title bar and pane close button.
+//! Shared pane clearance under the title bar and close button.
 
 use egui::{Rect, pos2};
 
