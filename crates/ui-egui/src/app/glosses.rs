@@ -274,6 +274,20 @@ impl MareaderApp {
         if let Some(answerers) = self.ui.ai.follow(&ai_look) {
             self.session.study_set_ai(answerers);
         }
+        #[cfg(target_os = "macos")]
+        if ai_look
+            .skill_model(mareader_settings::Skill::Builtin(
+                mareader_settings::PageTask::Translate,
+            ))
+            .is_some_and(|m| m.provider == mareader_settings::Provider::Apple)
+            && self
+                .ui
+                .ai
+                .board()
+                .is_some_and(|b| b.apple == mareader_assist::Load::Idle)
+        {
+            self.ui.ai.send(mareader_assist::Job::Probe);
+        }
         #[cfg(not(target_arch = "wasm32"))]
         let apple = self.ui.ai.board().and_then(|b| match b.apple.ready() {
             Some(mareader_assist::AppleState::Ready(languages)) => Some(languages.as_slice()),
