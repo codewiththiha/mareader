@@ -165,7 +165,6 @@ pub fn show(
     let mut typed: String = ui.data(|d| d.get_temp(query_id)).unwrap_or_default();
     let words = query::terms(&typed);
     let places = cached_places(ui, reading, rows);
-    // Each row with its cached page and chapter, which a search reads too.
     let placed: Vec<(Option<usize>, Option<&str>, &Row)> = rows
         .iter()
         .zip(places.iter())
