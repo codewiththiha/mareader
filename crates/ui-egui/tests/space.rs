@@ -233,12 +233,12 @@ fn long_book_title_line_scrolls_without_moving_close() {
     h.run();
     h.get_by_label("Details for gaunt").click();
     h.run_steps(30);
-    h.set_size(egui::vec2(360.0, 680.0));
+    h.set_size(egui::vec2(260.0, 680.0));
     h.run_steps(15);
     let title = "Middlemarch, A Field Guide to Ferns";
     let before = h.get_by_label(title).rect();
     let close = h.get_by_label("Close word details").rect();
-    h.hover_at(egui::pos2(180.0, close.center().y));
+    h.hover_at(egui::pos2(100.0, close.center().y));
     h.event(egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,
         delta: egui::vec2(-220.0, 0.0),
