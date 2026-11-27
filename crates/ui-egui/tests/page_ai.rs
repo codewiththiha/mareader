@@ -484,3 +484,6 @@ fn translation_submenu_escape_folds_before_the_page_menu_closes() -> Out {
 
 #[path = "page_ai_keyboard.rs"]
 mod keyboard;
+
+#[path = "page_ai_position.rs"]
+mod position;

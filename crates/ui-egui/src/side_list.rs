@@ -262,7 +262,7 @@ fn mark_open(
     }
 }
 
-/// Keeps a selection list outside its enclosing card when space allows.
+/// Keeps a side list outside its enclosing menu when space allows.
 fn popup<'a>(
     resp: &Response,
     popup_id: Id,
@@ -290,18 +290,14 @@ fn popup<'a>(
             pos2(parent.left(), resp.interact_rect.top()),
             pos2(parent.right(), resp.interact_rect.bottom()),
         );
-        if right >= width + 4.0 || left >= width + 4.0 {
-            popup = popup
-                .anchor(anchor)
-                .align_alternatives(&[egui::RectAlign::LEFT_START]);
+        // Choose by horizontal room alone. A tall list can be moved up to
+        // fit vertically without forcing a horizontally wrong alternative.
+        let side = if right >= width + 4.0 || (left < width + 4.0 && right >= left) {
+            egui::RectAlign::RIGHT_START
         } else {
-            let side = if right >= left {
-                egui::RectAlign::RIGHT_START
-            } else {
-                egui::RectAlign::LEFT_START
-            };
-            popup = popup.anchor(anchor).align(side).align_alternatives(&[]);
-        }
+            egui::RectAlign::LEFT_START
+        };
+        popup = popup.anchor(anchor).align(side).align_alternatives(&[]);
     }
     (popup, list_h)
 }
