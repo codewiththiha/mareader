@@ -211,3 +211,18 @@ fn the_list_before_a_query_hints_instead_of_searching() {
     let _ = h.get_by_label("Type a word to see every place it appears");
     assert!(h.query_by_label("Searching…").is_none());
 }
+
+#[test]
+fn match_case_reissues_the_same_query_and_restores_folded_search() {
+    let mut h = reader(&[("pdf", "sample:3")]);
+    search(&mut h, "QUICK");
+    assert_eq!(hit_pages(&h).len(), 3);
+    h.get_by_label("Match case").click();
+    h.run_steps(30);
+    assert!(h.state().find().case_sensitive());
+    assert!(hit_pages(&h).is_empty(), "the document has lowercase quick");
+    h.get_by_label("Match case").click();
+    h.run_steps(30);
+    assert!(!h.state().find().case_sensitive());
+    assert_eq!(hit_pages(&h).len(), 3);
+}

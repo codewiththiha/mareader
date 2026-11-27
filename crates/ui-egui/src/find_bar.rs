@@ -2,13 +2,13 @@
 
 mod snippet;
 
-use snippet::snippet;
 use egui::{
     Align, Context, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, Rect, Response, RichText,
     Sense, Stroke, StrokeKind, TextEdit, Ui, UiBuilder, pos2, vec2,
 };
 use mareader_search::{Hit, from_page, step};
 use mareader_workspace::PaneId;
+use snippet::snippet;
 
 use crate::icons::Icon;
 use crate::motion::entrance;
@@ -480,9 +480,12 @@ enum Tone {
 fn case_button(ui: &mut Ui, t: &Tokens, on: bool) -> bool {
     let ink = if on { t.accent } else { t.ink };
     let button = egui::Button::new(RichText::new("Aa").strong().color(ink))
-        .selected(on).min_size(vec2(KNOB, KNOB));
+        .selected(on)
+        .min_size(vec2(KNOB, KNOB));
     let response = ui.add(button);
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, "Match case"));
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, "Match case")
+    });
     response.on_hover_text("Match case").clicked()
 }
 
@@ -657,4 +660,3 @@ fn result_row(ui: &mut Ui, t: &Tokens, (hit, needle): (&Hit, &str), on: bool) ->
     painter.galley(pos2(left, y), words, t.ink);
     r
 }
-

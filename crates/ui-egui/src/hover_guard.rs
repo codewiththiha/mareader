@@ -62,3 +62,23 @@ pub fn rested(ctx: &Context, since: &mut Option<f64>, guarded: bool) -> bool {
     }
     waited >= DELAY
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::{pos2, vec2};
+
+    #[test]
+    fn controls_can_protect_one_or_both_edges() {
+        let ctx = Context::default();
+        let rect = Rect::from_min_size(pos2(12.0, 740.0), vec2(36.0, 36.0));
+        protect(&ctx, rect, true, true);
+        assert!(near(&ctx, pos2(2.0, 755.0), Edge::Sidebar));
+        assert!(near(&ctx, pos2(28.0, 799.0), Edge::PageBar));
+        assert!(!near(&ctx, pos2(100.0, 799.0), Edge::PageBar));
+        let other = Context::default();
+        protect(&other, rect, true, false);
+        assert!(near(&other, pos2(2.0, 755.0), Edge::Sidebar));
+        assert!(!near(&other, pos2(28.0, 799.0), Edge::PageBar));
+    }
+}

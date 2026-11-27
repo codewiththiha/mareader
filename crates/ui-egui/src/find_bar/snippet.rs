@@ -1,9 +1,9 @@
 //! Search result snippet formatting.
 
-use std::ops::Range;
+use crate::theme::{self, Tokens};
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{FontId, TextFormat};
-use crate::theme::{self, Tokens};
+use std::ops::Range;
 
 /// The snippet over two lines at most, its match washed in the accent.
 pub(super) fn snippet(t: &Tokens, text: &str, needle: &str, width: f32, on: bool) -> LayoutJob {
