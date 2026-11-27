@@ -1,6 +1,7 @@
 //! Last touches on an egui shot: late keys, marked boxes and a crop.
 
 use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
 use image::{Rgba, RgbaImage};
 
 /// Pixels per point in every shot.
@@ -20,6 +21,8 @@ pub struct Finish {
     crop: Option<[f32; 4]>,
     resize: Option<egui::Vec2>,
     wheel: Vec<[f32; 3]>,
+    right_label: Option<String>,
+    late_clicks: Vec<String>,
 }
 
 impl Finish {
@@ -41,6 +44,8 @@ impl Finish {
                     h.parse().map_err(|_| "resize height")?,
                 ));
             }
+            "late_right" => self.right_label = Some(v.replace('_', " ")),
+            "late_click" => self.late_clicks.push(v.replace('_', " ")),
             "late_wheel" => {
                 let n: Vec<f32> = v.split(',').filter_map(|n| n.parse().ok()).collect();
                 let [x, y, dy] = n.as_slice() else {
@@ -68,6 +73,18 @@ impl Finish {
                 modifiers: egui::Modifiers::NONE,
             });
             harness.run_steps(30);
+        }
+        if let Some(label) = &self.right_label {
+            if let Some(node) = harness.query_all_by_label(label).next() {
+                node.click_secondary();
+                harness.run_steps(6);
+            }
+        }
+        for label in &self.late_clicks {
+            if let Some(node) = harness.query_all_by_label(label).next() {
+                node.click();
+                harness.run_steps(8);
+            }
         }
         for key in &self.keys {
             harness.key_press(*key);
