@@ -34,14 +34,18 @@ fn header(ui: &mut Ui, detail: &Detail, t: &Tokens) -> bool {
             vec2(width, 24.0),
             Layout::left_to_right(Align::Center),
             |ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
-                ui.add(Icon::Book.image(ui, 15.0).tint(t.muted));
-                let books = detail.row.books.join("  ·  ");
+                let books = detail.row.books.join(", ");
                 let label = RichText::new(&books)
                     .font(theme::medium(t.text_small + 1.0))
                     .color(t.muted);
-                ui.add(Label::new(label).truncate().selectable(false))
-                    .on_hover_text(books);
+                egui::ScrollArea::horizontal()
+                    .id_salt(("word-detail-books", detail.row.key))
+                    .max_width(width)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        ui.add(Label::new(label).extend().selectable(false))
+                            .on_hover_text(books);
+                    });
             },
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -126,14 +130,19 @@ fn core(ui: &mut Ui, detail: &Detail, t: &Tokens) {
                 ui.set_width(ui.available_width());
                 look::caption(ui, "In context", t);
                 ui.add_space(3.0);
-                ui.add(
-                    Label::new(sentence::highlight(
-                        &detail.row.context,
-                        &detail.row.form,
-                        t,
-                    ))
-                    .wrap(),
-                );
+                egui::ScrollArea::vertical()
+                    .id_salt(("word-detail-context", detail.row.key))
+                    .max_height(128.0)
+                    .show(ui, |ui| {
+                        ui.add(
+                            Label::new(sentence::highlight(
+                                &detail.row.context,
+                                &detail.row.form,
+                                t,
+                            ))
+                            .wrap(),
+                        );
+                    });
             });
     }
 }
@@ -247,16 +256,21 @@ fn recall(ui: &mut Ui, detail: &Detail, t: &Tokens) {
         );
         return;
     }
-    for run in &detail.history {
-        let title = session_title(detail, run);
-        if !title.is_empty() {
-            look::quiet(ui, &title, t.text_small, t);
-        }
-        for answer in &run.answers {
-            attempt(ui, answer, t);
-        }
-        ui.add_space(4.0);
-    }
+    egui::ScrollArea::vertical()
+        .id_salt(("word-detail-recall", detail.row.key))
+        .max_height(245.0)
+        .show(ui, |ui| {
+            for run in &detail.history {
+                let title = session_title(detail, run);
+                if !title.is_empty() {
+                    look::quiet(ui, &title, t.text_small, t);
+                }
+                for answer in &run.answers {
+                    attempt(ui, answer, t);
+                }
+                ui.add_space(4.0);
+            }
+        });
 }
 
 pub(super) fn session_title(detail: &Detail, run: &History) -> String {

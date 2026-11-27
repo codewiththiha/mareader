@@ -157,6 +157,24 @@ fn unique<'a>(items: impl Iterator<Item = &'a String>) -> Vec<String> {
     out
 }
 
+/// Expand a clicked row with every other book where its word was encountered.
+/// The row's own books stay first, without changing its sentence or meaning.
+pub fn detail_row(lib: &Library, mut row: Row) -> Row {
+    let mut seen: Vec<_> = lib.sightings_of(row.word).collect();
+    seen.sort_by_key(|s| Reverse(s.seen.value));
+    for sighting in seen {
+        let id = sighting.book.value;
+        if row.book_ids.contains(&id) {
+            continue;
+        }
+        if let Some(book) = lib.book(id) {
+            row.book_ids.push(id);
+            row.books.push(book.title.value.clone());
+        }
+    }
+    row
+}
+
 /// Recall sessions belonging to a displayed word's included books.
 pub fn history(lib: &Library, row: &Row) -> Vec<History> {
     let mut out = Vec::new();

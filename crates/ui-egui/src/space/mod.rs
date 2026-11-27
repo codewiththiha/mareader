@@ -241,6 +241,7 @@ impl SpaceUi {
         crate::widgets::scroll_fades(ui, &scrolled, t.paper);
         if let Some((row, rect)) = picked {
             let now = ui.ctx().input(|i| i.time);
+            let row = space::detail_row(lib, row);
             let history = space::history(lib, &row);
             let detail = detail::Detail::new(row, history, rect, now);
             self.lookup = Some(detail.word().to_owned());

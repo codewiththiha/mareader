@@ -23,7 +23,7 @@ const WORDS: [(&str, &str, u8, &str, &str); 8] = [
         "gaunt",
         "adjective",
         4,
-        "The gaunt hound watched from the porch.",
+        "The gaunt hound watched from the porch, its ears raised toward the distant road, where the last light of evening fell across the fields and the wind carried the sound of a cart making its slow way home; even after the bells had faded, it remained there patiently, waiting for a familiar footstep at the gate.",
         "very thin, as from hunger or age",
     ),
     (
@@ -100,7 +100,7 @@ pub(crate) fn seed(model: &mut Library, now_ms: u64) -> usize {
                 .get(i % STATUSES.len())
                 .copied()
                 .unwrap_or_default(),
-            tries: if recalled { 1 + (i % 3) as u8 } else { 0 },
+            tries: if lemma == "gaunt" { 3 } else if recalled { 1 + (i % 3) as u8 } else { 0 },
             first_try: recalled && i.is_multiple_of(3),
             answers: match lemma {
                 "arcane" => vec![RecallAnswer {
@@ -118,6 +118,11 @@ pub(crate) fn seed(model: &mut Library, now_ms: u64) -> usize {
                         text: "very thin".into(),
                         verdict: "Close".into(),
                         feedback: "Thin and worn in appearance.".into(),
+                    },
+                    RecallAnswer {
+                        text: "thin and worn".into(),
+                        verdict: "Correct".into(),
+                        feedback: "Yes, that captures the appearance.".into(),
                     },
                 ],
                 _ => Vec::new(),

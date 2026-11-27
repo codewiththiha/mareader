@@ -164,6 +164,23 @@ fn history_respects_the_selected_books_and_keeps_every_session() {
     let selected = view(&lib, &filter);
     let row = selected.rows().next().expect("a word");
     assert_eq!(history(&lib, row).len(), 2);
+    let detail = detail_row(&lib, row.clone());
+    assert_eq!(detail.books, ["One", "Two"]);
+    assert_eq!(history(&lib, &detail).len(), 3);
+}
+
+#[test]
+fn detail_lists_all_books_with_the_clicked_book_first() {
+    let lib = shelf();
+    let view = view(&lib, &az(Scope::Books));
+    for (clicked, other) in [("Dune", "Emma"), ("Emma", "Dune")] {
+        let source = view.rows().find(|r| r.lemma == "lintel" && r.books == [clicked]).expect("sighting");
+        let detail = detail_row(&lib, source.clone());
+        assert_eq!(detail.books, [clicked, other]);
+        assert_eq!(detail.book_ids.first(), source.book_ids.first());
+        assert_eq!(detail.context, source.context);
+        assert_eq!(detail.meaning, source.meaning);
+    }
 }
 
 #[test]
