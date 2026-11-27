@@ -82,6 +82,9 @@ impl Session {
         let by = self.study_mode.judge().map(|j| j.by()).unwrap_or_default();
         let writer = self.study_mode.writer();
         let tag = self.vocab.ask_tag(&word.form, &word.sentence);
+        if let Some(open) = self.study_mode.recalling_pane() {
+            self.study_recall_close(open);
+        }
         let mut recalling = Recalling::new(pane, word, writer, by);
         recalling.asks.0 = tag;
         look_up(&mut recalling, &mut self.dict);
@@ -133,7 +136,7 @@ impl Session {
     }
 
     /// Closes the recall; a revealed word is saved as missed first.
-    fn study_recall_close(&mut self, pane: PaneId) -> bool {
+    pub(super) fn study_recall_close(&mut self, pane: PaneId) -> bool {
         let Some(recalling) = self.study_mode.recalling(pane) else {
             return false;
         };
@@ -276,3 +279,7 @@ fn sentence_around(layer: &TextLayer, chars: &Range<usize>) -> Option<String> {
     let full: String = text.iter().collect();
     Some(sentence_of(&full, at))
 }
+
+#[cfg(test)]
+#[path = "study_recall_tests.rs"]
+mod tests;

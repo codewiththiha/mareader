@@ -111,9 +111,16 @@ pub(crate) fn seed(model: &mut Library, now_ms: u64) -> usize {
             } else {
                 Vec::new()
             },
-            synonyms: if lemma == "arcane" { vec!["obscure".into()] } else { Vec::new() },
-            usages: if lemma == "arcane" { vec!["An arcane custom.".into()] } else { Vec::new() },
-            ..NewWord::default()
+            synonyms: if lemma == "arcane" {
+                vec!["obscure".into()]
+            } else {
+                Vec::new()
+            },
+            usages: if lemma == "arcane" {
+                vec!["An arcane custom.".into()]
+            } else {
+                Vec::new()
+            },
         };
         let at = now_ms.saturating_sub(i as u64 * 9 * DAY_MS);
         let nth = |n: usize| books.get(n % books.len().max(1)).copied();

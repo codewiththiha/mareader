@@ -64,11 +64,13 @@ impl Session {
         let book = self.study_book(pane);
         self.page_ai_stop_follow(pane);
         let run = Run::new(wanted, book, current);
+        self.study_recall_close(pane);
         self.study_mode.start(pane, doc, run);
         Ok(())
     }
 
     pub(crate) fn study_mode_off(&mut self, pane: PaneId) -> bool {
+        self.study_recall_close(pane);
         self.study_mode.stop(pane)
     }
 
@@ -266,7 +268,7 @@ impl Session {
 
     fn tick_study_pane(&mut self, pane: PaneId, now: f64) -> bool {
         if !self.tree.panes().contains(&pane) {
-            return self.study_mode.stop(pane);
+            return self.study_mode_off(pane);
         }
         let Some(why) = self.study_lost(pane) else {
             if self
@@ -282,7 +284,7 @@ impl Session {
             let timed = self.study_expire(pane, now) | self.study_arrive(pane, now);
             return planned | followed | decks | timed | self.study_hold(pane);
         };
-        self.study_mode.stop(pane);
+        self.study_mode_off(pane);
         if !why.is_empty() {
             self.emit(Event::Toast(Toast::warning(why)));
         }
@@ -340,7 +342,7 @@ impl Session {
                 true
             }
             Err(why) => {
-                self.study_mode.stop(pane);
+                self.study_mode_off(pane);
                 self.emit(Event::Toast(Toast::error(why)));
                 true
             }

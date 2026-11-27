@@ -429,12 +429,16 @@ button, the Library button or Escape go back.
   *Export CSV*; the status tabs, each counted after every other filter.
 - **Stats:** memorized words of those met, first-try answers of the
   reactive answers, and a bar per level's memorized words.
-- **Toolbar:** group by none, book, level, month or status (never book when
+- **Toolbar:** group by none, book, level, day, month or status (never book when
   merged; levels go hardest first), sort by recent, A–Z, hardest, most tries
   or book, and a list or cards.
 - **A row** shows the word, its class and level, its meaning, its status,
   *card* or its tries, *first try*, its books and the day it was last met.
-  Its chevron opens the sentence. *Memorize* and *Un-memorize* act on the
+  Its chevron opens the sentence and highlights the form in it. A row or card
+  opens its detail view; Escape closes it. Available meanings, synonyms,
+  examples and recall answers show there while dictionary lookup runs separately.
+  Judged answers are kept by book and session when a recall ends or closes;
+  older answer texts were not saved. *Memorize* and *Un-memorize* act on the
   word in every book; *Forget* drops it, so it is carded again when met.
 - **CSV** (`mareader-space.csv`): a line per row shown under the header
   `lemma,pos,level,meaning,context,book,status,date`, every cell quoted;

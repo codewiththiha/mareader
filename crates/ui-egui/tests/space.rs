@@ -160,7 +160,10 @@ fn word_details_open_from_list_and_escape_returns_to_words() {
     h.get_by_label("Details for arcane").click();
     h.run_steps(30);
     assert!(h.query_by_label("Close word details").is_some());
-    assert!(h.query_by_label_contains("known by very few  ·  Correct").is_some());
+    assert!(
+        h.query_by_label_contains("known by very few  ·  Correct")
+            .is_some()
+    );
     assert!(h.query_by_label("obscure").is_some());
     h.key_press(egui::Key::Escape);
     h.run_steps(30);

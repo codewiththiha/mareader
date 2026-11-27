@@ -143,7 +143,10 @@ fn history_respects_the_selected_books_and_keeps_every_session() {
     let (one, two) = (book(&mut lib, "One", 11), book(&mut lib, "Two", 12));
     let answer = |text: &str| NewWord {
         by: LearnedBy::Reactive,
-        answers: vec![RecallAnswer { text: text.into(), ..Default::default() }],
+        answers: vec![RecallAnswer {
+            text: text.into(),
+            ..Default::default()
+        }],
         ..noun("run", 2)
     };
     lib.record_word(one, answer("first"), OCT);
@@ -154,7 +157,10 @@ fn history_respects_the_selected_books_and_keeps_every_session() {
     let all = history(&lib, row);
     assert_eq!(all.len(), 3);
     assert_eq!(all[0].answers[0].text, "third");
-    let filter = Filter { book: Some(one), ..az(Scope::Merged) };
+    let filter = Filter {
+        book: Some(one),
+        ..az(Scope::Merged)
+    };
     let selected = view(&lib, &filter);
     let row = selected.rows().next().expect("a word");
     assert_eq!(history(&lib, row).len(), 2);
