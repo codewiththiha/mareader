@@ -251,5 +251,13 @@ fn return_rises_above_an_expanding_ai_stack() -> Out {
             "expanding: {back:?}, {stack:?}"
         );
     }
+    let back = h.get_by_label("Go back to vocabs").rect();
+    h.hover_at(back.center());
+    h.run_steps(3);
+    h.hover_at(egui::pos2(2.0, back.center().y));
+    h.run_steps(6);
+    assert!(!h.state().sidebar().is_open(), "passing from return to the edge must not open the sidebar");
+    h.run_steps(40);
+    assert!(h.state().sidebar().is_open(), "a deliberate rest opens the sidebar");
     Ok(())
 }

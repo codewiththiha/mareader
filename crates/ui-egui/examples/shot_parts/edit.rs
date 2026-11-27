@@ -71,7 +71,10 @@ impl Finish {
     }
 
     /// Presses the keys, then runs exactly `frames`: `key=Space frames=8`.
-    pub fn press(&self, harness: &mut Harness<'_, mareader_ui_egui::MareaderApp>) -> Result<(), String> {
+    pub fn press(
+        &self,
+        harness: &mut Harness<'_, mareader_ui_egui::MareaderApp>,
+    ) -> Result<(), String> {
         if let Some(size) = self.resize {
             harness.set_size(size);
             harness.run_steps(15);
@@ -113,14 +116,23 @@ impl Finish {
             use mareader_ui_egui::ui_command::Sent;
             let pane = harness.state().active_pane();
             for page in [1, 2] {
-                harness.state_mut().queue(Sent::Engine(Command::PageAi(Action::Run {
-                    pane, page, task: PageTask::Simplify, how: How::default(),
-                })));
+                harness
+                    .state_mut()
+                    .queue(Sent::Engine(Command::PageAi(Action::Run {
+                        pane,
+                        page,
+                        task: PageTask::Simplify,
+                        how: How::default(),
+                    })));
                 harness.run_steps(20);
             }
         }
         if let Some(label) = &self.late_hover {
-            harness.query_all_by_label(label).next().ok_or(format!("nothing named {label}"))?.hover();
+            harness
+                .query_all_by_label(label)
+                .next()
+                .ok_or(format!("nothing named {label}"))?
+                .hover();
             harness.run_steps(1);
         }
         if let Some(size) = self.late_resize {

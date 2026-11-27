@@ -95,14 +95,26 @@ impl Page {
         let chars = Chars::new(&self.folded);
         let n = needle.chars;
         let positions: Vec<usize> = if needle.case.is_some() {
-            self.folded.char_indices().filter_map(|(byte, _)| {
-                self.folded.get(byte..).filter(|tail| tail.starts_with(&needle.folded)).map(|_| byte)
-            }).collect()
+            self.folded
+                .char_indices()
+                .filter_map(|(byte, _)| {
+                    self.folded
+                        .get(byte..)
+                        .filter(|tail| tail.starts_with(&needle.folded))
+                        .map(|_| byte)
+                })
+                .collect()
         } else {
-            self.folded.match_indices(&needle.folded).map(|(byte, _)| byte).collect()
+            self.folded
+                .match_indices(&needle.folded)
+                .map(|(byte, _)| byte)
+                .collect()
         };
-        let mut hits: Vec<Range<usize>> = positions.into_iter()
-            .map(|byte| chars.at(byte)).map(|c| c..c + n).collect();
+        let mut hits: Vec<Range<usize>> = positions
+            .into_iter()
+            .map(|byte| chars.at(byte))
+            .map(|c| c..c + n)
+            .collect();
         if !self.soft.is_empty() {
             self.across_lines(needle, &mut hits);
         }
@@ -114,7 +126,8 @@ impl Page {
                     .enumerate()
                     .skip(range.start)
                     .take(range.end - range.start)
-                    .filter(|(at, _)| !self.soft.iter().any(|(soft, _)| *soft as usize == *at))
+                    .filter(|(at, _)| range.end - range.start == needle.chars
+                        || !self.soft.iter().any(|(soft, _)| *soft as usize == *at))
                     .map(|(_, c)| c);
                 actual.zip(case.chars()).all(|(a, b)| {
                     a.is_uppercase() == b.is_uppercase() && a.is_lowercase() == b.is_lowercase()
@@ -363,6 +376,7 @@ mod tests {
         assert_eq!(p.find(&needle).len(), 1);
         let needle = Needle::with_case("International", true).unwrap();
         assert_eq!(p.find(&needle).len(), 1);
+        assert_eq!(p.find(&Needle::with_case("Inter-national", true).unwrap()).len(), 1);
         assert_eq!(p.find(&Needle::new("fox").unwrap()).len(), 3);
         let overlap = page(&["aAa"]);
         assert_eq!(

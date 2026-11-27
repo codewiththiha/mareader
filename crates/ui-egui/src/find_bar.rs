@@ -631,7 +631,13 @@ pub fn tick_name(page: usize) -> String {
 }
 
 /// A page chip, then two lines of words with the match marked.
-fn result_row(ui: &mut Ui, t: &Tokens, (hit, needle): (&Hit, &str), on: bool, case_sensitive: bool) -> Response {
+fn result_row(
+    ui: &mut Ui,
+    t: &Tokens,
+    (hit, needle): (&Hit, &str),
+    on: bool,
+    case_sensitive: bool,
+) -> Response {
     let size = vec2(ui.available_width(), ROW_H);
     let (rect, r) = ui.allocate_exact_size(size, Sense::click());
     let label = format!("Page {}: {}", hit.page + 1, hit.snippet);
@@ -654,7 +660,14 @@ fn result_row(ui: &mut Ui, t: &Tokens, (hit, needle): (&Hit, &str), on: bool, ca
     painter.rect_filled(chip, CornerRadius::same(6), chip_fill);
     painter.galley(chip.center() - galley.size() / 2.0, galley, t.ink);
     let left = chip.right() + 10.0;
-    let job = snippet(t, &hit.snippet, needle, rect.right() - 10.0 - left, on, case_sensitive);
+    let job = snippet(
+        t,
+        &hit.snippet,
+        needle,
+        rect.right() - 10.0 - left,
+        on,
+        case_sensitive,
+    );
     let words = ui.fonts_mut(|f| f.layout_job(job));
     let y = rect.center().y - words.size().y / 2.0;
     painter.galley(pos2(left, y), words, t.ink);

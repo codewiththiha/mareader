@@ -6,7 +6,14 @@ use egui::{FontId, TextFormat};
 use std::ops::Range;
 
 /// The snippet over two lines at most, its match washed in the accent.
-pub(super) fn snippet(t: &Tokens, text: &str, needle: &str, width: f32, on: bool, case_sensitive: bool) -> LayoutJob {
+pub(super) fn snippet(
+    t: &Tokens,
+    text: &str,
+    needle: &str,
+    width: f32,
+    on: bool,
+    case_sensitive: bool,
+) -> LayoutJob {
     let body = FontId::proportional(t.text_small + 0.5);
     let plain = TextFormat::simple(body, if on { t.ink } else { t.muted });
     let marked = TextFormat {
@@ -48,10 +55,15 @@ fn marked_range(text: &str, needle: &str, case_sensitive: bool) -> Option<Range<
         let Some(window) = chars.get(start..start + want.len()) else {
             continue;
         };
-        let same = window.iter().zip(needle.chars()).all(|(&(_, c), original)| {
-            fold(c) == fold(original) && (!case_sensitive ||
-                (c.is_uppercase() == original.is_uppercase() && c.is_lowercase() == original.is_lowercase()))
-        });
+        let same = window
+            .iter()
+            .zip(needle.chars())
+            .all(|(&(_, c), original)| {
+                fold(c) == fold(original)
+                    && (!case_sensitive
+                        || (c.is_uppercase() == original.is_uppercase()
+                            && c.is_lowercase() == original.is_lowercase()))
+            });
         if !same {
             continue;
         }
@@ -77,7 +89,10 @@ mod tests {
         let m = marked_range(text, "QUICK", false).unwrap_or_default();
         assert_eq!(text.get(m.clone()), Some("quick"));
         assert!(m.start > 20 && m.start < 30, "the middle one: {m:?}");
-        assert_eq!(marked_range("ÉCOLE", "école", false), Some(0.."ÉCOLE".len()));
+        assert_eq!(
+            marked_range("ÉCOLE", "école", false),
+            Some(0.."ÉCOLE".len())
+        );
         assert_eq!(marked_range("abc", "", false), None);
         assert_eq!(marked_range("abc", "z", false), None);
     }
