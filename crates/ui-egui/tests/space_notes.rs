@@ -293,6 +293,12 @@ fn saved_ai_selection_opens_and_returns_to_its_tab() -> Result<(), Box<dyn std::
         .1;
     h.state_mut()
         .queue(Sent::Engine(Command::Library(Action::SeedAiNotes)));
+    h.run_steps(10);
+    let other = mareader_engine::documents::OpenRequest::bytes(
+        mareader_pdf::sample::pdf(2, "Other book"), "other.pdf");
+    h.state_mut().queue(Sent::Engine(Command::Open(other)));
+    h.run_steps(30);
+    assert!(h.state().skills().asks().iter().all(|a| a.pinned.is_none()), "the source book is closed");
     h.state_mut()
         .queue(Sent::Engine(Command::ShowSpace(Room::Notes)));
     h.run_steps(15);
