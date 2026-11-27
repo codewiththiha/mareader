@@ -298,6 +298,8 @@ fn return_rises_above_an_expanding_ai_stack() -> Out {
 #[test]
 fn vocab_card_columns_can_be_adjusted_and_reset() {
     let mut h = words();
+    h.get_by_label("Merged").click();
+    h.run_steps(5);
     h.query_all_by_label("Cards").last().unwrap().click();
     h.run_steps(5);
     let before = h.get_by_label("Details for gaunt").rect().width();

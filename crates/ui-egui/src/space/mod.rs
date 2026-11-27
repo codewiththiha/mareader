@@ -10,8 +10,8 @@ mod detail;
 mod hub;
 mod locateglow;
 mod look;
-mod notes;
 mod note_selection;
+mod notes;
 mod rail;
 mod returning;
 mod rows;
@@ -51,6 +51,7 @@ pub struct SpaceUi {
     pub filter: Filter,
     pub notes: NotesFilter,
     notes_selection: note_selection::Selection,
+    notes_selection_filter: Option<NotesFilter>,
     /// Cards in a grid instead of the list.
     pub cards: bool,
     card_columns: Option<u8>,
@@ -269,6 +270,10 @@ impl SpaceUi {
         t: &Tokens,
         out: &mut Commands,
     ) {
+        if self.notes_selection_filter.as_ref() != Some(&self.notes) {
+            self.notes_selection = note_selection::Selection::default();
+            self.notes_selection_filter = Some(self.notes.clone());
+        }
         let view = space::notes(from.lib, &self.notes);
         let book = &mut self.notes.book;
         let main = rail(ui, page, t, |ui| {
@@ -284,7 +289,14 @@ impl SpaceUi {
                 .id_salt("space-notes")
                 .auto_shrink([false, false]);
             let scrolled = scroll.show(ui, |ui| {
-                notes::column(ui, (&view, filter), (from.look, narrow), &mut self.notes_selection, t, out);
+                notes::column(
+                    ui,
+                    (&view, filter),
+                    (from.look, narrow),
+                    &mut self.notes_selection,
+                    t,
+                    out,
+                );
                 ui.add_space(MARGIN);
             });
             crate::widgets::scroll_fades(ui, &scrolled, t.paper);

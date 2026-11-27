@@ -130,7 +130,14 @@ fn heading(ui: &mut Ui, group: &NoteGroup, t: &Tokens) {
 }
 
 /// A book's rows on one raised sheet, a hairline between each.
-fn sheet(ui: &mut Ui, group: &NoteGroup, look: &HighlightSettings, selection: &mut Selection, t: &Tokens, out: &mut Commands) {
+fn sheet(
+    ui: &mut Ui,
+    group: &NoteGroup,
+    look: &HighlightSettings,
+    selection: &mut Selection,
+    t: &Tokens,
+    out: &mut Commands,
+) {
     let edge = Stroke::new(1.0, t.line);
     let frame = Frame::new()
         .fill(t.card)
@@ -179,7 +186,15 @@ fn line(
             sw: if ends.1 { look::ROUND as u8 } else { 0 },
             se: if ends.1 { look::ROUND as u8 } else { 0 },
         };
-        ui.painter().rect_filled(rect.shrink(1.0), round, if selection.selected(row.id) { t.accent_soft } else { t.hover });
+        ui.painter().rect_filled(
+            rect.shrink(1.0),
+            round,
+            if selection.selected(row.id) {
+                t.accent_soft
+            } else {
+                t.hover
+            },
+        );
         ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
     }
     let painter = ui.painter();
@@ -202,9 +217,16 @@ fn line(
     meta(ui, rect, row, t);
     let label = format!("Open {}", row.quote);
     r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
-    if rect.intersect(ui.clip_rect()).is_positive() { selection.visible(row.id); }
+    if rect.intersect(ui.clip_rect()).is_positive() {
+        selection.visible(row.id);
+    }
     selection.menu(&r, row.id, out);
-    if r.clicked() && selection.active() { selection.toggle(row.id); false } else { r.clicked() }
+    if r.clicked() && selection.active() {
+        selection.toggle(row.id);
+        false
+    } else {
+        r.clicked()
+    }
 }
 
 /// The mark's colour as the reader paints it; a bookmark takes the accent.
