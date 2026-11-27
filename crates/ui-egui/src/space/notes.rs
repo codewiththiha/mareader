@@ -24,7 +24,7 @@ use crate::widgets;
 
 /// The page's own label, which tests and the titlebar find it by.
 pub const TITLE: &str = "Notes";
-const LINE: &str = "Highlights, notes and bookmarks from every book. Click one to read it again.";
+const LINE: &str = "Highlights, notes, bookmarks and saved AI answers from every book. Click one to read it again.";
 const SEARCH_W: f32 = 320.0;
 const NONE_YET: &str = "Highlight words while reading, or add a note or a bookmark.";
 const NONE_MATCH: &str = "Try other words, another chip or another book.";
@@ -98,7 +98,7 @@ fn header(ui: &mut Ui, filter: &mut NotesFilter, t: &Tokens) {
             widgets::input(&mut filter.text)
                 .id(egui::Id::new("space-notes-search"))
                 .icon(Icon::Search)
-                .hint("Search quotes and notes")
+                .hint("Search quotes, notes and AI answers")
                 .label("Search your notes")
                 .clearable(true)
                 .width(width)

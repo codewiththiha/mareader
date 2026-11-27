@@ -43,16 +43,15 @@ pub(super) fn show(
                     let source = egui::Button::new(RichText::new(&row.source).color(t.accent))
                         .frame(false)
                         .wrap();
-                    if ui
-                        .add(source)
-                        .on_hover_text("Go to this selection in the book")
-                        .clicked()
-                    {
-                        out.push(Sent::Ui(UiCommand::OpenSpaceAi {
-                            book: group.book,
-                            id: row.id,
-                        }));
-                    }
+                    egui::ScrollArea::vertical()
+                        .id_salt(("space-ai-source", row.id.0))
+                        .max_height(90.0)
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            if ui.add(source).on_hover_text("Go to this selection in the book").clicked() {
+                                out.push(Sent::Ui(UiCommand::OpenSpaceAi { book: group.book, id: row.id }));
+                            }
+                        });
                     egui::ScrollArea::vertical()
                         .id_salt(("space-ai-answer", row.id.0))
                         .max_height(150.0)
@@ -71,8 +70,12 @@ pub(super) fn show(
                 selection.visible(id);
             }
             selection.menu(&hit, id, group.book, out);
-            if hit.clicked() && selection.active() {
-                selection.toggle(id);
+            if hit.clicked() {
+                if selection.active() {
+                    selection.toggle(id);
+                } else {
+                    out.push(Sent::Ui(UiCommand::OpenSpaceAi { book: group.book, id: row.id }));
+                }
             }
             if let Some((key, pending, _)) = reveal
                 && *key == row.id.0

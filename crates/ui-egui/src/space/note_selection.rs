@@ -65,7 +65,8 @@ impl Selection {
         out: &mut Commands,
     ) {
         widgets::context_menu(hit, |ui| {
-            if widgets::menu_row(ui, Icon::Book, "Go to note in book", None, false).clicked() {
+            let go = match id { Item::Mark(_) => "Go to note in book", Item::Ai(_) => "Go to AI result in book" };
+            if widgets::menu_row(ui, Icon::Book, go, None, false).clicked() {
                 let command = match id {
                     Item::Mark(mark) => UiCommand::OpenSpaceNote { book, mark },
                     Item::Ai(id) => UiCommand::OpenSpaceAi { book, id },
