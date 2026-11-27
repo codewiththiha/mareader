@@ -6,7 +6,7 @@ use egui::{FontId, TextFormat};
 use std::ops::Range;
 
 /// The snippet over two lines at most, its match washed in the accent.
-pub(super) fn snippet(t: &Tokens, text: &str, needle: &str, width: f32, on: bool) -> LayoutJob {
+pub(super) fn snippet(t: &Tokens, text: &str, needle: &str, width: f32, on: bool, case_sensitive: bool) -> LayoutJob {
     let body = FontId::proportional(t.text_small + 0.5);
     let plain = TextFormat::simple(body, if on { t.ink } else { t.muted });
     let marked = TextFormat {
@@ -16,7 +16,7 @@ pub(super) fn snippet(t: &Tokens, text: &str, needle: &str, width: f32, on: bool
         ..TextFormat::default()
     };
     let mut job = LayoutJob::default();
-    match marked_range(text, needle) {
+    match marked_range(text, needle, case_sensitive) {
         Some(m) => {
             job.append(text.get(..m.start).unwrap_or_default(), 0.0, plain.clone());
             job.append(text.get(m.clone()).unwrap_or_default(), 0.0, marked);
@@ -34,7 +34,7 @@ pub(super) fn snippet(t: &Tokens, text: &str, needle: &str, width: f32, on: bool
 }
 
 /// Where `needle` sits in `text`, ignoring case: the match nearest the middle.
-fn marked_range(text: &str, needle: &str) -> Option<Range<usize>> {
+fn marked_range(text: &str, needle: &str, case_sensitive: bool) -> Option<Range<usize>> {
     let fold = |c: char| c.to_lowercase().next().unwrap_or(c);
     let want: Vec<char> = needle.chars().map(fold).collect();
     if want.is_empty() {
@@ -48,7 +48,10 @@ fn marked_range(text: &str, needle: &str) -> Option<Range<usize>> {
         let Some(window) = chars.get(start..start + want.len()) else {
             continue;
         };
-        let same = window.iter().zip(&want).all(|(&(_, c), &w)| fold(c) == w);
+        let same = window.iter().zip(needle.chars()).all(|(&(_, c), original)| {
+            fold(c) == fold(original) && (!case_sensitive ||
+                (c.is_uppercase() == original.is_uppercase() && c.is_lowercase() == original.is_lowercase()))
+        });
         if !same {
             continue;
         }
@@ -71,11 +74,11 @@ mod tests {
     #[test]
     fn the_match_is_found_in_any_case_nearest_the_middle() {
         let text = "…the Quick fox and the quick dog and the quick cat…";
-        let m = marked_range(text, "QUICK").unwrap_or_default();
+        let m = marked_range(text, "QUICK", false).unwrap_or_default();
         assert_eq!(text.get(m.clone()), Some("quick"));
         assert!(m.start > 20 && m.start < 30, "the middle one: {m:?}");
-        assert_eq!(marked_range("ÉCOLE", "école"), Some(0.."ÉCOLE".len()));
-        assert_eq!(marked_range("abc", ""), None);
-        assert_eq!(marked_range("abc", "z"), None);
+        assert_eq!(marked_range("ÉCOLE", "école", false), Some(0.."ÉCOLE".len()));
+        assert_eq!(marked_range("abc", "", false), None);
+        assert_eq!(marked_range("abc", "z", false), None);
     }
 }

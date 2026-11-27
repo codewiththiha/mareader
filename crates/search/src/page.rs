@@ -94,18 +94,26 @@ impl Page {
     pub fn find(&self, needle: &Needle) -> Vec<Range<usize>> {
         let chars = Chars::new(&self.folded);
         let n = needle.chars;
-        let mut hits: Vec<Range<usize>> = self.folded.char_indices()
-            .filter(|(byte, _)| self.folded.get(*byte..).is_some_and(|tail| tail.starts_with(&needle.folded)))
-            .map(|(byte, _)| chars.at(byte))
-            .map(|c| c..c + n)
-            .collect();
+        let positions: Vec<usize> = if needle.case.is_some() {
+            self.folded.char_indices().filter_map(|(byte, _)| {
+                self.folded.get(byte..).filter(|tail| tail.starts_with(&needle.folded)).map(|_| byte)
+            }).collect()
+        } else {
+            self.folded.match_indices(&needle.folded).map(|(byte, _)| byte).collect()
+        };
+        let mut hits: Vec<Range<usize>> = positions.into_iter()
+            .map(|byte| chars.at(byte)).map(|c| c..c + n).collect();
         if !self.soft.is_empty() {
             self.across_lines(needle, &mut hits);
         }
         if let Some(case) = &needle.case {
             hits.retain(|range| {
-                let actual = self.shown.chars().enumerate()
-                    .skip(range.start).take(range.end - range.start)
+                let actual = self
+                    .shown
+                    .chars()
+                    .enumerate()
+                    .skip(range.start)
+                    .take(range.end - range.start)
                     .filter(|(at, _)| !self.soft.iter().any(|(soft, _)| *soft as usize == *at))
                     .map(|(_, c)| c);
                 actual.zip(case.chars()).all(|(a, b)| {
@@ -357,7 +365,10 @@ mod tests {
         assert_eq!(p.find(&needle).len(), 1);
         assert_eq!(p.find(&Needle::new("fox").unwrap()).len(), 3);
         let overlap = page(&["aAa"]);
-        assert_eq!(overlap.find(&Needle::with_case("Aa", true).unwrap()).len(), 1);
+        assert_eq!(
+            overlap.find(&Needle::with_case("Aa", true).unwrap()).len(),
+            1
+        );
     }
 
     fn found(p: &Page, q: &str) -> Vec<String> {

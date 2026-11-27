@@ -24,6 +24,8 @@ pub struct Finish {
     right_label: Option<String>,
     late_clicks: Vec<String>,
     late_resize: Option<egui::Vec2>,
+    late_activity: bool,
+    late_hover: Option<String>,
 }
 
 impl Finish {
@@ -52,6 +54,8 @@ impl Finish {
                     h.parse().map_err(|_| "late_resize height")?,
                 ));
             }
+            "late_activity" => self.late_activity = v == "true",
+            "late_hover" => self.late_hover = Some(v.replace('_', " ")),
             "late_right" => self.right_label = Some(v.replace('_', " ")),
             "late_click" => self.late_clicks.push(v.replace('_', " ")),
             "late_wheel" => {
@@ -67,7 +71,7 @@ impl Finish {
     }
 
     /// Presses the keys, then runs exactly `frames`: `key=Space frames=8`.
-    pub fn press<S>(&self, harness: &mut Harness<'_, S>) -> Result<(), String> {
+    pub fn press(&self, harness: &mut Harness<'_, mareader_ui_egui::MareaderApp>) -> Result<(), String> {
         if let Some(size) = self.resize {
             harness.set_size(size);
             harness.run_steps(15);
@@ -101,6 +105,23 @@ impl Finish {
                 node.click();
             }
             harness.run_steps(8);
+        }
+        if self.late_activity {
+            use mareader_engine::command::Command;
+            use mareader_engine::page_ai::{Action, How};
+            use mareader_settings::PageTask;
+            use mareader_ui_egui::ui_command::Sent;
+            let pane = harness.state().active_pane();
+            for page in [1, 2] {
+                harness.state_mut().queue(Sent::Engine(Command::PageAi(Action::Run {
+                    pane, page, task: PageTask::Simplify, how: How::default(),
+                })));
+                harness.run_steps(20);
+            }
+        }
+        if let Some(label) = &self.late_hover {
+            harness.query_all_by_label(label).next().ok_or(format!("nothing named {label}"))?.hover();
+            harness.run_steps(1);
         }
         if let Some(size) = self.late_resize {
             harness.set_size(size);
