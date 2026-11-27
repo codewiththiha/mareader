@@ -366,3 +366,83 @@ fn a_failed_ask_unmarks_the_word_and_try_again_marks_it_back() {
     let meaning = state.answer(key).map(|s| s.info.meaning.clone());
     assert_eq!(meaning.as_deref(), Some("asleep"), "and answers");
 }
+
+struct LanguageGate {
+    gate: GateExplainer,
+    language: &'static str,
+}
+
+impl Explainer for LanguageGate {
+    fn by(&self) -> String {
+        self.gate.by()
+    }
+
+    fn language(&self) -> Option<&'static str> {
+        Some(self.language)
+    }
+
+    fn explain(
+        &self,
+        word: &str,
+        context: &str,
+        partial: &(dyn Fn(WordInfo) + Sync),
+    ) -> Result<WordInfo, Failure> {
+        self.gate.explain(word, context, partial)
+    }
+}
+
+#[test]
+fn an_answer_is_filed_in_the_language_it_was_asked_after_reconfiguration() {
+    use super::super::state::State;
+    use super::super::words::Asked;
+    use mareader_library::{DeviceId, Library, Spot};
+
+    let (wake, _) = asked();
+    let mut main = Library::new(DeviceId(1));
+    let mut state = State::default();
+    let release = Arc::new(std::sync::Condvar::new());
+    let open = Arc::new(Mutex::new(false));
+    state.set_explainer(Arc::new(LanguageGate {
+        gate: GateExplainer {
+            by: "Old model",
+            meaning: "bonjour",
+            release: Arc::clone(&release),
+            open: Arc::clone(&open),
+        },
+        language: "French",
+    }));
+    let ask = Asked {
+        word: "hello".into(),
+        context: "hello there".into(),
+        page: 0,
+        chars: 0..5,
+        spot: Some(Spot::Page {
+            page: 0,
+            rect: [1.0, 1.0, 10.0, 10.0],
+        }),
+    };
+    let key = state.explain_mark(&mut main, None, "book", &ask, 1);
+    state.prepare_card(&mut main, Arc::clone(&wake), key, &ask.word, &ask.context);
+    state.set_explainer(Arc::new(LanguageGate {
+        gate: GateExplainer {
+            by: "New model",
+            meaning: "new",
+            release: Arc::new(std::sync::Condvar::new()),
+            open: Arc::new(Mutex::new(true)),
+        },
+        language: "Burmese",
+    }));
+    if let Ok(mut flag) = open.lock() {
+        *flag = true;
+        release.notify_all();
+    }
+    assert!(waited(|| {
+        state.receive(&mut main);
+        state.answer(key).is_some()
+    }));
+    let filed = state.take_filed();
+    assert_eq!(filed.len(), 1);
+    assert_eq!(filed[0].1.info.meaning, "bonjour");
+    assert_eq!(filed[0].2, Some("French"));
+    assert_eq!(state.language(), Some("Burmese"));
+}
