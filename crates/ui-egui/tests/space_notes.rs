@@ -266,6 +266,7 @@ fn saved_ai_selection_opens_and_returns_to_its_tab() -> Result<(), Box<dyn std::
     h.set_size(egui::vec2(1280.0, 900.0));
     h.run_steps(30);
     let pane = h.state().active_pane();
+    let book = h.state().session().book_in(pane).ok_or("source book")?;
     let document = h
         .state()
         .session()
@@ -295,10 +296,12 @@ fn saved_ai_selection_opens_and_returns_to_its_tab() -> Result<(), Box<dyn std::
         .queue(Sent::Engine(Command::Library(Action::SeedAiNotes)));
     h.run_steps(10);
     let other = mareader_engine::documents::OpenRequest::bytes(
-        mareader_pdf::sample::pdf(2, "Other book"), "other.pdf");
+        mareader_pdf::sample::pdf(2, "Other book"),
+        "other.pdf",
+    );
     h.state_mut().queue(Sent::Engine(Command::Open(other)));
     h.run_steps(30);
-    assert!(h.state().skills().asks().iter().all(|a| a.pinned.is_none()), "the source book is closed");
+    assert_ne!(h.state().session().book_in(pane), Some(book), "the source book is closed");
     h.state_mut()
         .queue(Sent::Engine(Command::ShowSpace(Room::Notes)));
     h.run_steps(15);
@@ -307,6 +310,7 @@ fn saved_ai_selection_opens_and_returns_to_its_tab() -> Result<(), Box<dyn std::
     h.get_by_label(&source).click();
     h.run_steps(80);
     assert_eq!(h.state().route(), Route::Reader);
+    assert_eq!(h.state().session().book_in(h.state().active_pane()), Some(book));
     let ask = h
         .state()
         .skills()
