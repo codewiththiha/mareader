@@ -298,10 +298,10 @@ impl FindBar {
                         self.typed = None;
                     }
                     let (back, next) = steps(ui, t);
-                    if let Some((text, tone)) = self.tally(found) {
-                        chip(ui, t, &text, tone);
+                    if let Some(text) = self.tally(found) {
+                        chip(ui, t, &text);
                     }
-                    let enter = self.field(ui, t, field_id, now);
+                    let enter = self.field(ui, t, field_id, now, found);
                     let shift = ui.input(|i| i.modifiers.shift);
                     if enter || next.clicked() || back.clicked() {
                         let forward = if enter { !shift } else { next.clicked() };
@@ -336,7 +336,9 @@ impl FindBar {
     }
 
     /// The query, without a box: the capsule is its frame. True on Enter.
-    fn field(&mut self, ui: &mut Ui, t: &Tokens, id: Id, now: f64) -> bool {
+    fn field(&mut self, ui: &mut Ui, t: &Tokens, id: Id, now: f64, found: Option<&Found>) -> bool {
+        let missing = !self.query.trim().is_empty() && self.typed.is_none()
+            && found.is_some_and(|f| f.done() && f.hits.is_empty());
         let before = self.query.clone();
         let hint = RichText::new(PLACEHOLDER).color(t.muted.gamma_multiply(0.8));
         let field = TextEdit::singleline(&mut self.query)
@@ -344,7 +346,7 @@ impl FindBar {
             .frame(Frame::NONE)
             .margin(Margin::ZERO)
             .font(FontId::proportional(t.text + 1.0))
-            .text_color(t.ink)
+            .text_color(if missing { t.danger } else { t.ink })
             .hint_text(hint)
             .desired_width(f32::INFINITY);
         let r = ui.add(field);
@@ -360,8 +362,8 @@ impl FindBar {
         enter
     }
 
-    /// "3 of 57", "57 found" before a step, "No matches"; "…" while read.
-    fn tally(&self, found: Option<&Found>) -> Option<(String, Tone)> {
+    /// "3 of 57", "57 found" before a step; "…" while reading.
+    fn tally(&self, found: Option<&Found>) -> Option<String> {
         if self.query.trim().is_empty() {
             return None;
         }
@@ -370,10 +372,9 @@ impl FindBar {
         let more = if f.more { "+" } else { "" };
         let still = if f.done() { "" } else { "…" };
         Some(match self.active.filter(|&i| i < n) {
-            _ if n == 0 && f.done() => ("No matches".into(), Tone::None),
             _ if n == 0 => return None,
-            Some(i) => (format!("{} of {n}{more}{still}", i + 1), Tone::Some),
-            None => (format!("{n}{more}{still} found"), Tone::Some),
+            Some(i) => format!("{} of {n}{more}{still}", i + 1),
+            None => format!("{n}{more}{still} found"),
         })
     }
 
@@ -469,13 +470,6 @@ fn hint(ui: &mut Ui, t: &Tokens) {
     });
 }
 
-/// A count's mood: something found, or nothing.
-#[derive(Clone, Copy)]
-enum Tone {
-    Some,
-    None,
-}
-
 /// A compact case switch, with the current mode available to assistive tools.
 fn case_button(ui: &mut Ui, t: &Tokens, on: bool) -> bool {
     let ink = if on { t.accent } else { t.ink };
@@ -544,11 +538,8 @@ fn divider(ui: &mut Ui, t: &Tokens) {
 }
 
 /// The count in a pill: accented, or warm when nothing is found.
-fn chip(ui: &mut Ui, t: &Tokens, text: &str, tone: Tone) {
-    let (fill, ink) = match tone {
-        Tone::Some => (t.accent_soft, t.accent),
-        Tone::None => (t.danger.gamma_multiply(0.14), t.danger),
-    };
+fn chip(ui: &mut Ui, t: &Tokens, text: &str) {
+    let (fill, ink) = (t.accent_soft, t.accent);
     let words = ui
         .painter()
         .layout_no_wrap(text.to_owned(), theme::medium(t.text_small), ink);

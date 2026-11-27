@@ -28,6 +28,7 @@ const NONE_MATCH: &str = "Clear a filter, or study some pages to add more.";
 /// How the rows are drawn, and which one is open to its sentence.
 pub(super) struct Shown<'a> {
     pub cards: bool,
+    pub columns: Option<u8>,
     pub open: &'a mut Option<u128>,
     pub picked: &'a mut Option<(Row, egui::Rect)>,
     pub selection: &'a mut Selection,
@@ -47,6 +48,7 @@ pub(super) fn show(ui: &mut Ui, view: &View, shown: Shown<'_>, t: &Tokens, out: 
     }
     let Shown {
         cards,
+        columns,
         open,
         picked,
         selection,
@@ -58,7 +60,7 @@ pub(super) fn show(ui: &mut Ui, view: &View, shown: Shown<'_>, t: &Tokens, out: 
     for section in &view.sections {
         heading(ui, section, t);
         match cards {
-            true => grid(ui, &section.rows, picked, selection, scope, reveal, t, out),
+            true => grid(ui, &section.rows, picked, selection, scope, reveal, t, out, columns),
             false => sheet(
                 ui,
                 &section.rows,
@@ -141,7 +143,7 @@ fn line(
     let hit = row_hit(ui, row, vec2(ui.available_width(), 84.0));
     let frame = Frame::new()
         .fill(
-            if selection.is_selected(row) || reveal.as_ref().is_some_and(|r| r.0 == row.key) {
+            if selection.is_selected(row) {
                 t.accent_soft
             } else if hit.hovered() {
                 t.hover
@@ -192,6 +194,7 @@ fn line(
                 });
             }
         });
+    super::locateglow::draw(ui, frame.response.rect, row.key, reveal, t);
     pick(
         ui,
         row,
@@ -203,6 +206,10 @@ fn line(
         reveal,
         out,
     );
+}
+
+pub(super) fn auto_columns(width: f32) -> u8 {
+    (((width + GAP) / (CARD_W + CARD_EDGES + GAP)).floor() as u8).clamp(1, 6)
 }
 
 /// The words as cards, as many to a line as the page has room for.
@@ -218,15 +225,18 @@ fn grid(
     reveal: &mut Option<(u128, bool, f64)>,
     t: &Tokens,
     out: &mut Commands,
+    columns: Option<u8>,
 ) {
-    let across = (ui.available_width() + GAP) / (CARD_W + CARD_EDGES + GAP);
-    let across = (across.floor() as usize).max(1);
+    let width = ui.available_width();
+    let max_fit = ((width + GAP) / (180.0 + GAP)).floor().max(1.0) as u8;
+    let across = usize::from(columns.unwrap_or(auto_columns(width)).clamp(1, max_fit));
+    let card_width = ((width - GAP * (across - 1) as f32) / across as f32 - CARD_EDGES).max(1.0);
     for line in rows.chunks(across) {
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = GAP;
             for row in line {
                 ui.push_id(row.key, |ui| {
-                    card(ui, row, picked, selection, scope, reveal, t, out)
+                    card(ui, row, picked, selection, scope, reveal, t, out, card_width)
                 });
             }
         });
@@ -243,11 +253,12 @@ fn card(
     reveal: &mut Option<(u128, bool, f64)>,
     t: &Tokens,
     out: &mut Commands,
+    card_width: f32,
 ) {
-    let hit = row_hit(ui, row, vec2(CARD_W + CARD_EDGES, 180.0));
+    let hit = row_hit(ui, row, vec2(card_width + CARD_EDGES, 180.0));
     let frame = Frame::new()
         .fill(
-            if selection.is_selected(row) || reveal.as_ref().is_some_and(|r| r.0 == row.key) {
+            if selection.is_selected(row) {
                 t.accent_soft
             } else if hit.hovered() {
                 t.hover
@@ -259,7 +270,7 @@ fn card(
         .corner_radius(look::ROUND)
         .inner_margin(Margin::same(16))
         .show(ui, |ui| {
-            ui.set_width(CARD_W);
+            ui.set_width(card_width);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;
                 ui.horizontal(|ui| word(ui, row, t));
@@ -281,6 +292,7 @@ fn card(
                 ui.horizontal(|ui| memorize(ui, row, out, t));
             });
         });
+    super::locateglow::draw(ui, frame.response.rect, row.key, reveal, t);
     pick(
         ui,
         row,

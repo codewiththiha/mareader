@@ -294,3 +294,19 @@ fn return_rises_above_an_expanding_ai_stack() -> Out {
     );
     Ok(())
 }
+
+#[test]
+fn vocab_card_columns_can_be_adjusted_and_reset() {
+    let mut h = words();
+    h.get_by_label("Cards").click();
+    h.run_steps(5);
+    let before = h.get_by_label("Details for gaunt").rect().width();
+    h.get_by_label("Fewer vocab columns").click();
+    h.run_steps(5);
+    let larger = h.get_by_label("Details for gaunt").rect().width();
+    assert!(larger > before, "fewer columns make larger cards");
+    h.get_by_label("Auto").click();
+    h.run_steps(5);
+    let reset = h.get_by_label("Details for gaunt").rect().width();
+    assert!((reset - before).abs() < 1.0);
+}

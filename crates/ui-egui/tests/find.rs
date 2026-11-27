@@ -91,7 +91,8 @@ fn a_match_runs_across_lines_and_misses_count_zero() {
     h.get_by_role(egui::accesskit::Role::TextInput)
         .type_text("zz");
     h.run_steps(20);
-    let _ = h.get_by_label("No matches");
+    assert!(h.state().found().is_some_and(|f| f.done() && f.hits.is_empty()));
+    assert!(h.query_by_label("No matches").is_none());
 }
 
 #[test]

@@ -8,6 +8,7 @@
 
 mod detail;
 mod hub;
+mod locateglow;
 mod look;
 mod notes;
 mod rail;
@@ -50,6 +51,7 @@ pub struct SpaceUi {
     pub notes: NotesFilter,
     /// Cards in a grid instead of the list.
     pub cards: bool,
+    card_columns: Option<u8>,
     /// The row opened to its sentence, by its key.
     open: Option<u128>,
     detail: Option<detail::Detail>,
@@ -311,10 +313,14 @@ impl SpaceUi {
             top::stats(ui, view, t);
             ui.add_space(4.0);
             top::toolbar(ui, &mut self.filter, &mut self.cards, t);
+            if self.cards {
+                top::card_size(ui, &mut self.card_columns, t);
+            }
             ui.add_space(2.0);
             self.selection.toolbar(ui, self.filter.scope, t);
             let shown = rows::Shown {
                 cards: self.cards,
+                columns: self.card_columns,
                 open: &mut self.open,
                 picked: &mut picked,
                 selection: &mut self.selection,

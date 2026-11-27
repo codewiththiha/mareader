@@ -267,6 +267,25 @@ pub(super) fn toolbar(ui: &mut Ui, filter: &mut Filter, cards: &mut bool, t: &To
     }
 }
 
+/// Card size is set by the number of columns, or follows the available width.
+pub(super) fn card_size(ui: &mut Ui, columns: &mut Option<u8>, t: &Tokens) {
+    let auto = super::rows::auto_columns(ui.available_width());
+    let shown = columns.unwrap_or(auto);
+    ui.horizontal(|ui| {
+        look::quiet(ui, "Card columns", t.text_small, t);
+        if ui.add(egui::Button::selectable(columns.is_none(), "Auto")).clicked() {
+            *columns = None;
+        }
+        if widgets::small_icon_button(ui, Icon::Minus, "Fewer vocab columns").clicked() {
+            *columns = Some(shown.saturating_sub(1).max(1));
+        }
+        ui.label(shown.to_string());
+        if widgets::small_icon_button(ui, Icon::Plus, "More vocab columns").clicked() {
+            *columns = Some(shown.saturating_add(1).min(6));
+        }
+    });
+}
+
 /// The group and sort dropdowns, side by side.
 fn sorting(ui: &mut Ui, filter: &mut Filter, groups: &[Group], t: &Tokens) {
     ui.spacing_mut().item_spacing.x = 10.0;
