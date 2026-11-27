@@ -235,7 +235,11 @@ fn long_context_scrolls_without_moving_recall() {
     h.run_steps(30);
     let text = "The gaunt hound watched from the porch, its ears raised toward the distant road";
     let before = h.get_by_label_contains(text).rect();
-    let recall = h.query_all_by_label("Wrong").next().expect("attempt").rect();
+    let recall = h
+        .query_all_by_label("Wrong")
+        .next()
+        .expect("attempt")
+        .rect();
     let hint = h.get_by_label("Scroll to read more").rect();
     h.hover_at(hint.center() - egui::vec2(0.0, 60.0));
     h.event(egui::Event::MouseWheel {
@@ -246,7 +250,13 @@ fn long_context_scrolls_without_moving_recall() {
     });
     h.run_steps(30);
     assert!(h.get_by_label_contains(text).rect().top() < before.top() - 10.0);
-    assert_eq!(h.query_all_by_label("Wrong").next().expect("attempt").rect(), recall);
+    assert_eq!(
+        h.query_all_by_label("Wrong")
+            .next()
+            .expect("attempt")
+            .rect(),
+        recall
+    );
 }
 
 #[test]

@@ -162,7 +162,9 @@ fn unique<'a>(items: impl Iterator<Item = &'a String>) -> Vec<String> {
 pub fn detail_row(lib: &Library, mut row: Row) -> Row {
     let mut seen = lib.sightings_of(row.word);
     seen.sort_by_key(|s| Reverse(s.seen.value));
-    row.tries = seen.iter().fold(0_u32, |total, s| total.saturating_add(u32::from(s.tries.value)));
+    row.tries = seen.iter().fold(0_u32, |total, s| {
+        total.saturating_add(u32::from(s.tries.value))
+    });
     if let Some(latest) = seen.first() {
         row.seen = latest.seen.value;
     }
