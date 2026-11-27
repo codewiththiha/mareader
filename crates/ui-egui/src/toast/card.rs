@@ -77,7 +77,7 @@ pub(super) fn measure(ctx: &Context, live: &Live, width: f32, t: &Tokens) -> Car
         Some(_) => {
             let job = action_job(ctx, live, swatch.mark);
             let galley = ctx.fonts_mut(|f| f.layout_job(job));
-            galley.size().x + 16.0
+            galley.size().x + 20.0
         }
         None => 0.0,
     };
@@ -278,7 +278,7 @@ pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &m
 /// A compact action, confined to the toast's control rectangle.
 fn action_button(ui: &mut Ui, at: Rect, live: &Live, mark: Color32) -> egui::Response {
     let button = Button::new(action_job(ui.ctx(), live, mark))
-        .truncate()
+        .wrap_mode(egui::TextWrapMode::Extend)
         .fill(look(live.toast.tone, &Tokens::get(ui.ctx())).soft)
         .stroke(Stroke::new(1.0, mark.gamma_multiply(0.35)))
         .corner_radius(7);
@@ -379,6 +379,10 @@ mod tests {
                 let rect = Rect::from_min_size(pos2(0.0, 0.0), Vec2::new(320.0, HEIGHT));
                 let target = action_at(rect, &card);
                 let shown = action_button(ui, target, live, t.ink).rect;
+                assert!(
+                    target.contains_rect(shown),
+                    "{label}: {shown:?} exceeds {target:?}"
+                );
                 assert!(
                     rect.contains_rect(shown),
                     "{label}: {shown:?} outside {rect:?}"
