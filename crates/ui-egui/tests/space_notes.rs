@@ -90,3 +90,23 @@ fn note_context_selection_and_two_step_delete() {
         before - 1
     );
 }
+
+#[test]
+fn ai_selection_answers_can_be_selected_and_deleted() {
+    let mut h = reader(&[("books", "3"), ("ai_notes", "demo"), ("space", "notes")]);
+    h.set_size(egui::vec2(1100.0, 900.0));
+    h.run_steps(10);
+    assert!(h.query_by_label("AI selection results").is_some());
+    let answer = h.get_by_label("A selected passage");
+    answer.click_secondary();
+    h.run_steps(4);
+    h.get_by_label("Select").click();
+    h.run_steps(4);
+    h.get_by_label("Delete selected…").click();
+    h.run_steps(4);
+    h.get_by_label("Delete").click();
+    h.run_steps(4);
+    h.get_by_label("Are you sure?").click();
+    h.run_steps(6);
+    assert!(h.query_by_label("AI selection results").is_none());
+}

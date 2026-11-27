@@ -27,7 +27,7 @@ pub(super) fn run(session: &mut Session, intent: Command, now: f64) {
                 let placement = clicked(session);
                 open_book(session, book, (None, placement), Some(spot), now);
             }
-        },
+        }
         Command::PlaceBook {
             book,
             pane,

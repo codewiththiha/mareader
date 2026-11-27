@@ -99,12 +99,20 @@ pub struct NotesView {
 pub fn notes(lib: &Library, filter: &NotesFilter) -> NotesView {
     let marks: Vec<&Mark> = kept(lib).collect();
     let mut books = shelves(lib, &marks);
-    let saved: Vec<_> = lib.books().flat_map(|book| lib.ai_selections(book.id)).collect();
+    let saved: Vec<_> = lib
+        .books()
+        .flat_map(|book| lib.ai_selections(book.id))
+        .collect();
     for item in &saved {
         if let Some(shelf) = books.iter_mut().find(|b| b.id == item.book.value) {
             shelf.count += 1;
         } else if let Some(book) = lib.book(item.book.value) {
-            books.push(Shelf { id: book.id, title: book.title.value.clone(), format: book.format, count: 1 });
+            books.push(Shelf {
+                id: book.id,
+                title: book.title.value.clone(),
+                format: book.format,
+                count: 1,
+            });
         }
     }
     books.sort_by(|a, b| a.title.cmp(&b.title).then(a.id.cmp(&b.id)));
@@ -115,7 +123,10 @@ pub fn notes(lib: &Library, filter: &NotesFilter) -> NotesView {
         .filter(|m| book.is_none_or(|b| m.book.value == b))
         .collect();
     let mut counts = Kept::ALL.map(|k| mine.iter().filter(|m| k.holds(m)).count());
-    counts[0] += saved.iter().filter(|s| book.is_none_or(|id| id == s.book.value)).count();
+    counts[0] += saved
+        .iter()
+        .filter(|s| book.is_none_or(|id| id == s.book.value))
+        .count();
     let terms = query::terms(&filter.text);
     let kept = |m: &&Mark| {
         let note = m.note.value.as_deref().unwrap_or("");
@@ -125,11 +136,24 @@ pub fn notes(lib: &Library, filter: &NotesFilter) -> NotesView {
     let mut ai_groups = Vec::new();
     if filter.kept == Kept::All {
         for shelf in &books {
-            if book.is_some_and(|id| id != shelf.id) { continue; }
-            let items: Vec<_> = saved.iter().filter(|s| s.book.value == shelf.id
-                && query::keeps(&terms, &[&s.source, &s.result, &s.name]))
-                .map(|s| (*s).clone()).collect();
-            if !items.is_empty() { ai_groups.push(AiNoteGroup { book: shelf.id, title: shelf.title.clone(), rows: items }); }
+            if book.is_some_and(|id| id != shelf.id) {
+                continue;
+            }
+            let items: Vec<_> = saved
+                .iter()
+                .filter(|s| {
+                    s.book.value == shelf.id
+                        && query::keeps(&terms, &[&s.source, &s.result, &s.name])
+                })
+                .map(|s| (*s).clone())
+                .collect();
+            if !items.is_empty() {
+                ai_groups.push(AiNoteGroup {
+                    book: shelf.id,
+                    title: shelf.title.clone(),
+                    rows: items,
+                });
+            }
         }
     }
     let ai_shown: usize = ai_groups.iter().map(|g| g.rows.len()).sum();

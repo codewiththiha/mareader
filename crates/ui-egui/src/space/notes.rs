@@ -12,7 +12,11 @@ use mareader_engine::space::{self, Kept, NoteGroup, NoteRow, NotesFilter, NotesV
 use mareader_settings::HighlightSettings;
 use std::sync::Arc;
 
-use super::{look, note_selection::{Item, Selection}, top};
+use super::{
+    look,
+    note_selection::{Item, Selection},
+    top,
+};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent, UiCommand};

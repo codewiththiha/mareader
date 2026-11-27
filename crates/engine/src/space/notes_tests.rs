@@ -115,3 +115,18 @@ fn the_seeded_marks_fill_three_books() {
     assert_eq!(view.groups.len(), 3);
     assert_eq!(view.counts, [9, 4, 2]);
 }
+
+#[test]
+fn saved_ai_selections_appear_in_all_and_search() {
+    let (mut lib, ..) = shelf();
+    seed_ai_notes(&mut lib, 8_000);
+    let all = notes(&lib, &NotesFilter::default());
+    assert_eq!(all.total, 4);
+    assert_eq!(all.counts[0], 4);
+    assert_eq!(all.ai_groups.iter().map(|g| g.rows.len()).sum::<usize>(), 1);
+    let filter = NotesFilter { text: "passage".into(), ..NotesFilter::default() };
+    let found = notes(&lib, &filter);
+    assert_eq!(found.shown, 1);
+    let filter = NotesFilter { kept: Kept::Bookmarks, ..NotesFilter::default() };
+    assert!(notes(&lib, &filter).ai_groups.is_empty());
+}

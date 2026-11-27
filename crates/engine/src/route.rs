@@ -68,7 +68,11 @@ impl Route {
             I::RevealVoice(..) | I::Study(_) | I::Pronunciation(_) => false,
             I::Dict(_) | I::SetDictionary(_) | I::Vocab(_) => false,
             // The library's own, and what finishes wherever the window went.
-            I::OpenBook(_) | I::OpenMark(_) | I::OpenAiSelection(_) | I::SetLibraryView(_) | I::Library(_) => false,
+            I::OpenBook(_)
+            | I::OpenMark(_)
+            | I::OpenAiSelection(_)
+            | I::SetLibraryView(_)
+            | I::Library(_) => false,
             I::ForgetPositions { .. } | I::Open(_) | I::Export { .. } => false,
             I::SetAppearance(_) | I::SavePreset { .. } | I::DeletePreset(_) => false,
             I::SetTitlebarPinned(_) | I::SetSidebarOverlay(_) | I::ShowRoute(_) => false,

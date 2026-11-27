@@ -103,7 +103,10 @@ pub enum UiCommand {
         mark: mareader_library::MarkId,
     },
     /// Opens a saved AI selection and remembers its Space row.
-    OpenSpaceAi { book: mareader_library::BookId, id: mareader_library::AiSelectionId },
+    OpenSpaceAi {
+        book: mareader_library::BookId,
+        id: mareader_library::AiSelectionId,
+    },
     /// Opens a Space room on one book's notes or words: a library card's.
     SpaceFor {
         room: mareader_engine::space::Room,

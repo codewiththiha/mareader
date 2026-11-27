@@ -8,10 +8,13 @@ use crate::widgets;
 use egui::{Context, RichText, Ui};
 use mareader_engine::command::Command;
 use mareader_engine::study::Action;
-use mareader_library::{MarkId, AiSelectionId};
+use mareader_library::{AiSelectionId, MarkId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum Item { Mark(MarkId), Ai(AiSelectionId) }
+pub(super) enum Item {
+    Mark(MarkId),
+    Ai(AiSelectionId),
+}
 use std::collections::BTreeSet;
 
 #[derive(Default)]
@@ -170,10 +173,28 @@ impl Selection {
             cancel = true;
         }
         if confirm {
-            let marks = ids.iter().filter_map(|id| match id { Item::Mark(id) => Some(*id), _ => None }).collect::<Vec<_>>();
-            let ai = ids.iter().filter_map(|id| match id { Item::Ai(id) => Some(*id), _ => None }).collect::<Vec<_>>();
-            if !marks.is_empty() { out.push(Sent::Engine(Command::Study(Action::Remove(marks)))); }
-            if !ai.is_empty() { out.push(Sent::Engine(Command::Space(mareader_engine::space::Action::RemoveAiSelections(ai)))); }
+            let marks = ids
+                .iter()
+                .filter_map(|id| match id {
+                    Item::Mark(id) => Some(*id),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let ai = ids
+                .iter()
+                .filter_map(|id| match id {
+                    Item::Ai(id) => Some(*id),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            if !marks.is_empty() {
+                out.push(Sent::Engine(Command::Study(Action::Remove(marks))));
+            }
+            if !ai.is_empty() {
+                out.push(Sent::Engine(Command::Space(
+                    mareader_engine::space::Action::RemoveAiSelections(ai),
+                )));
+            }
             self.picked.clear();
         }
         if confirm || cancel {
