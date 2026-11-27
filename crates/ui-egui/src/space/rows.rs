@@ -6,7 +6,7 @@ use mareader_engine::command::Command;
 use mareader_engine::space::{self, Action, Row, Section, View};
 use mareader_library::{LearnedBy, WordStatus};
 
-use super::{look, sentence};
+use super::{look, selection::Selection, sentence};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent, UiCommand};
@@ -27,6 +27,9 @@ pub(super) struct Shown<'a> {
     pub cards: bool,
     pub open: &'a mut Option<u128>,
     pub picked: &'a mut Option<(Row, egui::Rect)>,
+    pub selection: &'a mut Selection,
+    pub scope: space::Scope,
+    pub reveal: &'a mut Option<(u128, bool, f64)>,
 }
 
 /// Every section, under its heading; an empty page says why.
@@ -43,16 +46,21 @@ pub(super) fn show(ui: &mut Ui, view: &View, shown: Shown<'_>, t: &Tokens, out: 
         cards,
         open,
         picked,
+        selection,
+        scope,
+        reveal,
     } = shown;
+    selection.begin();
     ui.spacing_mut().item_spacing.y = 10.0;
     for section in &view.sections {
         heading(ui, section, t);
         match cards {
-            true => grid(ui, &section.rows, picked, t, out),
-            false => sheet(ui, &section.rows, open, picked, t, out),
+            true => grid(ui, &section.rows, picked, selection, scope, reveal, t, out),
+            false => sheet(ui, &section.rows, open, picked, selection, scope, reveal, t, out),
         }
         ui.add_space(8.0);
     }
+    selection.finish();
 }
 
 /// A section's name and its count in a soft pill.
@@ -75,6 +83,9 @@ fn sheet(
     rows: &[Row],
     open: &mut Option<u128>,
     picked: &mut Option<(Row, egui::Rect)>,
+    selection: &mut Selection,
+    scope: space::Scope,
+    reveal: &mut Option<(u128, bool, f64)>,
     t: &Tokens,
     out: &mut Commands,
 ) {
@@ -92,7 +103,7 @@ fn sheet(
                 let (rule, _) = ui.allocate_exact_size(size, Sense::hover());
                 ui.painter().hline(rule.x_range(), rule.center().y, edge);
             }
-            ui.push_id(row.key, |ui| line(ui, row, open, picked, t, out));
+            ui.push_id(row.key, |ui| line(ui, row, open, picked, selection, scope, reveal, t, out));
         }
     });
 }
@@ -103,13 +114,18 @@ fn line(
     row: &Row,
     open: &mut Option<u128>,
     picked: &mut Option<(Row, egui::Rect)>,
+    selection: &mut Selection,
+    scope: space::Scope,
+    reveal: &mut Option<(u128, bool, f64)>,
     t: &Tokens,
     out: &mut Commands,
 ) {
     let is_open = *open == Some(row.key);
     let hit = row_hit(ui, row, vec2(ui.available_width(), 84.0));
     let frame = Frame::new()
-        .fill(if hit.hovered() {
+        .fill(if selection.is_selected(row) || reveal.as_ref().is_some_and(|r| r.0 == row.key) {
+            t.accent_soft
+        } else if hit.hovered() {
             t.hover
         } else {
             egui::Color32::TRANSPARENT
@@ -144,7 +160,7 @@ fn line(
             });
             ui.horizontal(|ui| {
                 ui.add_space(LEAD - ui.spacing().item_spacing.x);
-                actions(ui, row, out, t);
+                actions(ui, row, out, t, selection, scope);
                 if row.books.len() > 1 {
                     books(ui, row, t, out);
                 }
@@ -157,7 +173,7 @@ fn line(
                 });
             }
         });
-    pick(ui, row, frame.response.rect, hit, picked);
+    pick(ui, row, frame.response.rect, hit, picked, selection, scope, reveal, out);
 }
 
 /// The words as cards, as many to a line as the page has room for.
@@ -167,6 +183,9 @@ fn grid(
     ui: &mut Ui,
     rows: &[Row],
     picked: &mut Option<(Row, egui::Rect)>,
+    selection: &mut Selection,
+    scope: space::Scope,
+    reveal: &mut Option<(u128, bool, f64)>,
     t: &Tokens,
     out: &mut Commands,
 ) {
@@ -176,7 +195,7 @@ fn grid(
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = GAP;
             for row in line {
-                ui.push_id(row.key, |ui| card(ui, row, picked, t, out));
+                ui.push_id(row.key, |ui| card(ui, row, picked, selection, scope, reveal, t, out));
             }
         });
     }
@@ -186,12 +205,17 @@ fn card(
     ui: &mut Ui,
     row: &Row,
     picked: &mut Option<(Row, egui::Rect)>,
+    selection: &mut Selection,
+    scope: space::Scope,
+    reveal: &mut Option<(u128, bool, f64)>,
     t: &Tokens,
     out: &mut Commands,
 ) {
     let hit = row_hit(ui, row, vec2(CARD_W + CARD_EDGES, 180.0));
     let frame = Frame::new()
-        .fill(if hit.hovered() { t.hover } else { t.card })
+        .fill(if selection.is_selected(row) || reveal.as_ref().is_some_and(|r| r.0 == row.key) {
+            t.accent_soft
+        } else if hit.hovered() { t.hover } else { t.card })
         .stroke(Stroke::new(1.0, t.line))
         .corner_radius(look::ROUND)
         .inner_margin(Margin::same(16))
@@ -213,12 +237,12 @@ fn card(
                 ui.horizontal(|ui| {
                     look::quiet(ui, &space::day(row.seen), t.text_small, t);
                     let right = Layout::right_to_left(Align::Center);
-                    ui.with_layout(right, |ui| forget(ui, row, out));
+                    ui.with_layout(right, |ui| forget(ui, row, selection, scope));
                 });
                 ui.horizontal(|ui| memorize(ui, row, out, t));
             });
         });
-    pick(ui, row, frame.response.rect, hit, picked);
+    pick(ui, row, frame.response.rect, hit, picked, selection, scope, reveal, out);
 }
 
 fn row_hit(ui: &mut Ui, row: &Row, size: egui::Vec2) -> egui::Response {
@@ -251,11 +275,26 @@ fn pick(
     rect: egui::Rect,
     hit: egui::Response,
     picked: &mut Option<(Row, egui::Rect)>,
+    selection: &mut Selection,
+    scope: space::Scope,
+    reveal: &mut Option<(u128, bool, f64)>,
+    out: &mut Commands,
 ) {
     let id = ui.make_persistent_id("detail-hit");
     ui.ctx().data_mut(|d| d.insert_temp(id, rect));
+    if rect.intersect(ui.clip_rect()).is_positive() {
+        selection.visible(row);
+    }
+    if let Some((key, pending, _)) = reveal
+        && *key == row.key && *pending
+    {
+        ui.scroll_to_rect(rect, Some(Align::Center));
+        *pending = false;
+    }
+    selection.menu(ui, &hit, row, scope, out);
     if hit.clicked() {
-        *picked = Some((row.clone(), rect.intersect(ui.clip_rect())));
+        if selection.active() { selection.toggle(row); }
+        else { *picked = Some((row.clone(), rect.intersect(ui.clip_rect()))); }
     }
 }
 
@@ -327,7 +366,9 @@ fn books(ui: &mut Ui, row: &Row, t: &Tokens, out: &mut Commands) {
         }
         let words = RichText::new(title).size(t.text_small).color(t.muted);
         if look::link(ui, words, false, &open_book(title)).clicked() {
-            out.push(Sent::Engine(Command::OpenBook(*id)));
+            let quote = row.met_at.as_ref().filter(|at| at.book == *id)
+                .map_or_else(|| row.form.clone(), |at| at.quote.clone());
+            out.push(Sent::Ui(UiCommand::FindVocabInBook { book: *id, quote, row: row.key }));
         }
     }
 }
@@ -360,7 +401,7 @@ fn sentence(ui: &mut Ui, row: &Row, t: &Tokens, out: &mut Commands) {
             let link = link.on_hover_text(tip);
             if link.clicked() {
                 let (book, quote) = (at.book, at.quote.clone());
-                out.push(Sent::Ui(UiCommand::FindInBook { book, quote }));
+                out.push(Sent::Ui(UiCommand::FindVocabInBook { book, quote, row: row.key }));
             }
         }
         None => {
@@ -374,10 +415,10 @@ fn sentence(ui: &mut Ui, row: &Row, t: &Tokens, out: &mut Commands) {
 }
 
 /// Memorize or un-memorize, then forget: each acts on the word everywhere.
-fn actions(ui: &mut Ui, row: &Row, out: &mut Commands, t: &Tokens) {
+fn actions(ui: &mut Ui, row: &Row, out: &mut Commands, t: &Tokens, selection: &mut Selection, scope: space::Scope) {
     ui.spacing_mut().item_spacing.x = 6.0;
     memorize(ui, row, out, t);
-    forget(ui, row, out);
+    forget(ui, row, selection, scope);
 }
 
 fn memorize(ui: &mut Ui, row: &Row, out: &mut Commands, t: &Tokens) {
@@ -398,11 +439,10 @@ fn memorize(ui: &mut Ui, row: &Row, out: &mut Commands, t: &Tokens) {
     }
 }
 
-fn forget(ui: &mut Ui, row: &Row, out: &mut Commands) {
+fn forget(ui: &mut Ui, row: &Row, selection: &mut Selection, scope: space::Scope) {
     let label = format!("Forget {}", row.lemma);
     if widgets::small_icon_button(ui, Icon::Remove, &label).clicked() {
-        let words = vec![row.word];
-        out.push(Sent::Engine(Command::Space(Action::Forget(words))));
+        selection.ask_delete(row, scope);
     }
 }
 

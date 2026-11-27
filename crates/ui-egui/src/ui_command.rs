@@ -91,6 +91,12 @@ pub enum UiCommand {
         book: mareader_library::BookId,
         quote: String,
     },
+    /// Opens a vocabulary occurrence and remembers the row to return to.
+    FindVocabInBook {
+        book: mareader_library::BookId,
+        quote: String,
+        row: u128,
+    },
     /// Opens a Space room on one book's notes or words: a library card's.
     SpaceFor {
         room: mareader_engine::space::Room,
@@ -186,6 +192,7 @@ fn chrome_reads(ui: &UiCommand) -> bool {
         | U::ShowDictionary
         | U::ShowFind
         | U::FindInBook { .. }
+        | U::FindVocabInBook { .. }
         | U::SpaceFor { .. }
         | U::ShowOpenDialog(_)
         | U::LibraryDialog(_)

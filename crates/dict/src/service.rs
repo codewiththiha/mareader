@@ -43,6 +43,8 @@ pub enum Query {
     Remembered { words: Vec<String>, lang: String },
     /// Drops an AI meaning, found by its key.
     Forget { saved: Box<Saved> },
+    /// Remove matching words and classes from every AI dictionary language.
+    ForgetWords { words: Vec<(String, Option<String>)> },
     /// Drops every AI meaning kept in `lang`.
     Clear { lang: String },
     /// Writes `new` over `old`; a meaning under the new key stays unless
@@ -64,6 +66,7 @@ impl Query {
             | Self::Remember { .. }
             | Self::Remembered { .. }
             | Self::Forget { .. }
+            | Self::ForgetWords { .. }
             | Self::Clear { .. }
             | Self::Edit { .. } => None,
         }

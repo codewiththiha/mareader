@@ -12,6 +12,8 @@ mod look;
 mod notes;
 mod rail;
 mod rows;
+mod selection;
+mod returning;
 mod sentence;
 mod top;
 
@@ -52,6 +54,13 @@ pub struct SpaceUi {
     open: Option<u128>,
     detail: Option<detail::Detail>,
     lookup: Option<String>,
+    selection: selection::Selection,
+    selection_filter: Option<(Filter, bool)>,
+    return_to: Option<returning::Return>,
+    reveal: Option<(u128, bool, f64)>,
+    delete_ai: Option<Vec<(String, Option<String>)>>,
+    delete_ticket: Option<mareader_dict::Ticket>,
+    delete_error: Option<String>,
 }
 
 /// What the page asks of the window this frame.
@@ -104,7 +113,39 @@ impl SpaceUi {
         {
             self.detail = None;
         }
+        if let Some(words) = self.selection.dialog(ui.ctx(), from.lib, &t, out) {
+            self.delete_ai = Some(words);
+        }
         asked
+    }
+
+    pub fn take_delete_ai(&mut self) -> Option<Vec<(String, Option<String>)>> {
+        self.delete_ai.take()
+    }
+
+    pub fn set_delete_ticket(&mut self, ticket: mareader_dict::Ticket) {
+        self.delete_ticket = Some(ticket);
+    }
+
+    pub fn take_delete_error(&mut self) -> Option<String> {
+        self.delete_error.take()
+    }
+
+    pub fn remember_return(&mut self, book: BookId, row: u128, now: f64) {
+        self.return_to = Some(returning::Return::new(book, row, self.filter.clone(), self.cards, now));
+    }
+
+    pub fn show_return(&mut self, ctx: &egui::Context, book: Option<BookId>, rect: Rect, bar: bool) -> bool {
+        let Some(back) = &self.return_to else { return false; };
+        if Some(back.book) != book || !returning::show(ctx, back, rect, bar) { return false; }
+        if let Some(back) = self.return_to.take() {
+            self.filter = back.filter;
+            self.cards = back.cards;
+            self.reveal = Some((back.row, true, ctx.input(|i| i.time) + 5.0));
+            self.selection = selection::Selection::default();
+            return true;
+        }
+        false
     }
 
     pub fn escape(&mut self, ctx: &egui::Context) -> bool {
@@ -127,6 +168,10 @@ impl SpaceUi {
     }
 
     pub fn receive(&mut self, replies: &[mareader_dict::Reply]) {
+        if let Some(reply) = replies.iter().find(|r| Some(r.ticket) == self.delete_ticket) {
+            self.delete_ticket = None;
+            self.delete_error = reply.failed.clone();
+        }
         if let Some(detail) = &mut self.detail {
             for reply in replies {
                 detail.receive(reply);
@@ -164,6 +209,14 @@ impl SpaceUi {
         t: &Tokens,
         out: &mut Commands,
     ) -> Option<Ask> {
+        let key = (self.filter.clone(), self.cards);
+        if self.selection_filter.as_ref().is_some_and(|old| old != &key) {
+            self.selection = selection::Selection::default();
+        }
+        self.selection_filter = Some(key);
+        if self.reveal.as_ref().is_some_and(|r| ui.ctx().input(|i| i.time) > r.2) {
+            self.reveal = None;
+        }
         let view = space::view(lib, &self.filter);
         let filter = &mut self.filter;
         let main = rail(ui, page, t, |ui| rail::show(ui, &view, filter, t));
@@ -229,10 +282,14 @@ impl SpaceUi {
             ui.add_space(4.0);
             top::toolbar(ui, &mut self.filter, &mut self.cards, t);
             ui.add_space(2.0);
+            self.selection.toolbar(ui, self.filter.scope, t);
             let shown = rows::Shown {
                 cards: self.cards,
                 open: &mut self.open,
                 picked: &mut picked,
+                selection: &mut self.selection,
+                scope: self.filter.scope,
+                reveal: &mut self.reveal,
             };
             rows::show(ui, view, shown, t, out);
             ui.add_space(MARGIN);

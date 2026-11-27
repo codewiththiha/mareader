@@ -79,11 +79,15 @@ fn a_row_memorizes_and_forgets_its_word() {
     h.run();
     assert_eq!(status(&h, "ponder"), Some(WordStatus::Learning));
     press(&mut h, "Forget ponder");
-    let at = h.get_by_label("Forget ponder").rect().center();
-    let met = h.ctx.layer_id_at(at);
     h.run();
-    let why = format!("forgotten words leave Space; {at:?} met {met:?}");
-    assert_eq!(status(&h, "ponder"), None, "{why}");
+    assert!(h.query_by_label("Also delete from AI dictionary").is_some());
+    assert_eq!(status(&h, "ponder"), Some(WordStatus::Learning));
+    h.get_by_label("Delete").click();
+    h.run();
+    assert_eq!(status(&h, "ponder"), Some(WordStatus::Learning));
+    h.get_by_label("Are you sure?").click();
+    h.run();
+    assert_eq!(status(&h, "ponder"), None);
     assert!(h.query_by_label("All 9").is_some());
 }
 

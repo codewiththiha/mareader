@@ -32,6 +32,8 @@ pub enum Action {
     Unmemorize(Vec<WordId>),
     /// Gone from Space, and carded again when met.
     Forget(Vec<WordId>),
+    /// Remove the selected book-word occurrences and their study history.
+    RemoveOccurrences(Vec<(BookId, WordId)>),
 }
 
 /// A row per book's sighting, or a row per word.

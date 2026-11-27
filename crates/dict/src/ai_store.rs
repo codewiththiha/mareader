@@ -127,6 +127,24 @@ impl AiStore {
         gone.map(|n| n > 0).map_err(|e| e.to_string())
     }
 
+    /// Removes selected words and classes in all languages, atomically.
+    pub fn forget_words(&self, words: &[(String, Option<String>)]) -> Result<usize, String> {
+        let tx = self.conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let mut count = 0;
+        for (word, pos) in words {
+            let n = match pos {
+                Some(pos) => tx.execute(
+                    "DELETE FROM saved WHERE word_fold = ?1 AND pos = ?2",
+                    params![fold(word), class(pos)],
+                ),
+                None => tx.execute("DELETE FROM saved WHERE word_fold = ?1", [fold(word)]),
+            };
+            count += n.map_err(|e| e.to_string())?;
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(count)
+    }
+
     /// Drops every meaning kept in `lang`; how many went.
     pub fn clear(&self, lang: &str) -> Result<usize, String> {
         let sql = "DELETE FROM saved WHERE lang = ?1";

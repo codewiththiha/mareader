@@ -17,6 +17,10 @@ impl Session {
                 model.set_word_status(&ids, WordStatus::Learning, at)
             }
             Action::Forget(ids) => model.set_words_alive(&ids, false, at),
+            Action::RemoveOccurrences(items) => items
+                .into_iter()
+                .filter(|(book, word)| model.remove_word_from_book(*book, *word, at))
+                .count(),
         };
         match changed {
             0 => Done::quiet(),

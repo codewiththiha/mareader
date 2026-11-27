@@ -1,5 +1,7 @@
 //! The packs on disk, asked in place: a card's lookup and a search.
 
+mod remove_words;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -90,6 +92,7 @@ impl Shelf {
             Query::Remember { saved, replace } => self.remember(saved, *replace),
             Query::Remembered { words, lang } => self.remembered(words, lang),
             Query::Forget { saved } => self.forget_ai(saved),
+            Query::ForgetWords { words } => self.forget_ai_words(words),
             Query::Clear { lang } => self.clear_ai(lang),
             Query::Edit { old, new, replace } => self.edit_ai(old, new, *replace),
         }

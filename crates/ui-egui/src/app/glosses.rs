@@ -13,6 +13,16 @@ impl MareaderApp {
         self.show_page_ai(ctx, out, &sounds);
         self.show_skills(ctx, out);
         self.show_activity(ctx, out);
+        if self.route() == Route::Reader {
+            let pane = self.active();
+            let book = self.session.book_in(pane);
+            if let Some((_, rect)) = self.ui.pane_rects.iter().find(|(id, _)| *id == pane) {
+                let bar = !self.ui.chromeless && self.ui.page_bars.get(&pane).is_some_and(|b| b.shown());
+                if self.ui.space.show_return(ctx, book, *rect, bar) {
+                    out.push(Sent::Engine(Command::ShowSpace(mareader_engine::space::Room::Words)));
+                }
+            }
+        }
         self.ui
             .dict
             .show_editor(ctx, self.session.dict().edited(), out);
