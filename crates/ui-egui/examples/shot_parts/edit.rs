@@ -18,6 +18,8 @@ pub struct Finish {
     frames: usize,
     marks: Vec<[f32; 4]>,
     crop: Option<[f32; 4]>,
+    resize: Option<egui::Vec2>,
+    wheel: Option<[f32; 3]>,
 }
 
 impl Finish {
@@ -32,6 +34,15 @@ impl Finish {
             "frames" => self.frames = v.parse().map_err(|_| "frames=count")?,
             "mark" => self.marks.push(rect(v, "mark")?),
             "crop" => self.crop = Some(rect(v, "crop")?),
+            "resize" => {
+                let (w, h) = v.split_once('x').ok_or("resize=WxH")?;
+                self.resize = Some(egui::vec2(w.parse().map_err(|_| "resize width")?, h.parse().map_err(|_| "resize height")?));
+            }
+            "late_wheel" => {
+                let n: Vec<f32> = v.split(',').filter_map(|n| n.parse().ok()).collect();
+                let [x, y, dy] = n.as_slice() else { return Err("late_wheel=x,y,points".into()); };
+                self.wheel = Some([*x, *y, *dy]);
+            }
             _ => return Ok(false),
         }
         Ok(true)
@@ -39,6 +50,20 @@ impl Finish {
 
     /// Presses the keys, then runs exactly `frames`: `key=Space frames=8`.
     pub fn press<S>(&self, harness: &mut Harness<'_, S>) {
+        if let Some(size) = self.resize {
+            harness.set_size(size);
+            harness.run_steps(15);
+        }
+        if let Some([x, y, dy]) = self.wheel {
+            harness.hover_at(egui::pos2(x, y));
+            harness.event(egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -dy),
+                phase: egui::TouchPhase::Move,
+                modifiers: egui::Modifiers::NONE,
+            });
+            harness.run_steps(30);
+        }
         for key in &self.keys {
             harness.key_press(*key);
             harness.run_steps(1);

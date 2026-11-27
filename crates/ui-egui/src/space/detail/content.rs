@@ -22,7 +22,7 @@ pub(super) fn show(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) -> boo
     egui::ScrollArea::vertical()
         .id_salt("word-detail-scroll")
         .max_height((height - used).max(0.0))
-        .show(ui, |ui| body(ui, detail, t));
+        .show(ui, |ui| body(ui, detail, t, height));
     close
 }
 
@@ -54,7 +54,7 @@ fn header(ui: &mut Ui, detail: &Detail, t: &Tokens) -> bool {
     close
 }
 
-fn body(ui: &mut Ui, detail: &Detail, t: &Tokens) {
+fn body(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) {
     ui.spacing_mut().item_spacing.y = 7.0;
     ui.add_space(11.0);
     let word = RichText::new(&detail.row.lemma)
@@ -94,7 +94,7 @@ fn body(ui: &mut Ui, detail: &Detail, t: &Tokens) {
                 if has_recall(detail) {
                     left.add_space(14.0);
                     extra(left, detail, t);
-                    recall(right, detail, t);
+                    recall(right, detail, t, height);
                 } else {
                     extra(right, detail, t);
                 }
@@ -103,7 +103,7 @@ fn body(ui: &mut Ui, detail: &Detail, t: &Tokens) {
     } else {
         core(ui, detail, t);
         ui.add_space(12.0);
-        recall(ui, detail, t);
+        recall(ui, detail, t, height);
         ui.add_space(12.0);
         extra(ui, detail, t);
     }
@@ -246,40 +246,43 @@ fn has_recall(detail: &Detail) -> bool {
     !detail.history.is_empty() || detail.row.by == LearnedBy::Reactive
 }
 
-fn recall(ui: &mut Ui, detail: &Detail, t: &Tokens) {
+fn recall(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) {
     if !has_recall(detail) {
         return;
     }
     look::caption(ui, "Your recall", t);
-    if detail.history.is_empty() {
-        look::quiet(
-            ui,
-            "Answer text wasn't saved for earlier recalls.",
-            t.text_small + 1.0,
-            t,
-        );
-        return;
-    }
-    let scrolled = egui::ScrollArea::vertical()
-        .id_salt(("word-detail-recall", detail.row.key))
-        .max_height(245.0)
+    Frame::new()
+        .fill(t.paper)
+        .stroke(egui::Stroke::new(1.0, t.line))
+        .corner_radius(12)
+        .inner_margin(Margin::same(12))
         .show(ui, |ui| {
-            for run in &detail.history {
-                let title = session_title(detail, run);
-                if !title.is_empty() {
-                    look::quiet(ui, &title, t.text_small, t);
-                }
-                for answer in &run.answers {
-                    attempt(ui, answer, t);
-                }
-                ui.add_space(4.0);
+            ui.set_width(ui.available_width());
+            if detail.history.is_empty() {
+                look::quiet(ui, "Answer text wasn't saved for earlier recalls.", t.text_small + 1.0, t);
+                return;
+            }
+            let scrolled = egui::ScrollArea::vertical()
+                .id_salt(("word-detail-recall", detail.row.key))
+                .max_height((height * 0.42).clamp(80.0, 200.0))
+                .show(ui, |ui| {
+                    for run in &detail.history {
+                        let title = session_title(detail, run);
+                        if !title.is_empty() {
+                            look::quiet(ui, &title, t.text_small, t);
+                        }
+                        for answer in &run.answers {
+                            attempt(ui, answer, t);
+                        }
+                        ui.add_space(4.0);
+                    }
+                });
+            widgets::scroll_fades(ui, &scrolled, t.paper);
+            keep_wheel_inside(ui, &scrolled);
+            if scrolled.content_size.y > scrolled.inner_rect.height() + 1.0 {
+                look::quiet(ui, "Scroll for more attempts", t.text_small, t);
             }
         });
-    widgets::scroll_fades(ui, &scrolled, t.card);
-    keep_wheel_inside(ui, &scrolled);
-    if scrolled.content_size.y > scrolled.inner_rect.height() + 1.0 {
-        look::quiet(ui, "Scroll for more attempts", t.text_small, t);
-    }
 }
 
 // Keep wheel momentum from scrolling the card at a section's edge.
