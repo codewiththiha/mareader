@@ -230,6 +230,7 @@ impl MareaderApp {
                 english: None,
                 staged: Default::default(),
                 skill_reveal: None,
+                saved_ai_on_open: None,
                 lights: NativeLights::default(),
                 light_spots: None,
                 documents: DocumentsUi::default(),

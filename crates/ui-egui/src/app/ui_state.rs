@@ -54,6 +54,8 @@ pub struct UiState {
     pub(super) staged: std::collections::VecDeque<Staged>,
     /// A skill card being brought back into view, until its page is laid out.
     pub(super) skill_reveal: Option<mareader_engine::skills::AskId>,
+    /// Saved answer waiting for its book and restored selection anchor.
+    pub(super) saved_ai_on_open: Option<(mareader_library::AiSelectionId, f64)>,
     pub(super) lights: NativeLights,
     /// Where AppKit last drew the lights, once the binary measured them.
     pub(super) light_spots: Option<LightSpots>,

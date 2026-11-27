@@ -77,7 +77,8 @@ impl State {
             | Action::ResumeOrganizing
             | Action::DiscardPaused
             | Action::RestorePaused
-            | Action::ShowAdd => {}
+            | Action::ShowAdd
+            | Action::OpenAiSelection(_) => {}
         }
     }
 
