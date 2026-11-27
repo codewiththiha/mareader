@@ -73,6 +73,7 @@ fn ask(rt: &Runtime, slots: &Slots, id: impl Into<Asker>, route: Vec<Seat>) -> R
         rt: Some(rt),
         waker: &quiet(),
         slots,
+        apple_languages: &Arc::default(),
     };
     d.ask(id, route, |backend: Arc<dyn Backend>, _, _| async move {
         backend.ask(&prompt(), &|_| {}).await
@@ -146,6 +147,7 @@ fn a_flow_moves_to_the_next_model_when_one_fails() {
         rt: Some(&rt),
         waker: &quiet(),
         slots: &slots,
+        apple_languages: &Arc::default(),
     };
     let job: Running<Value> = d.flow(TaskId::Organize, vec![away, ok], |b, _| async move {
         let first = b.ask(&prompt(), &|_| {}).await;
@@ -166,6 +168,7 @@ fn the_job_hears_where_it_runs_and_each_ask_again() {
         rt: Some(&rt),
         waker: &quiet(),
         slots: &slots,
+        apple_languages: &Arc::default(),
     };
     let mut job: Running<Value> = d.ask(TaskId::Organize, route, |b, _, _| async move {
         let _ = b.ask(&prompt(), &|_| {}).await;
@@ -195,6 +198,7 @@ fn a_flow_steps_aside_between_requests_for_a_waited_job() {
         rt: Some(&rt),
         waker: &quiet(),
         slots: &slots,
+        apple_languages: &Arc::default(),
     };
     let watch = slots.clone();
     let job: Running<Value> = d.flow(TaskId::Organize, vec![organizer], move |b, _| async move {
@@ -218,4 +222,40 @@ fn a_flow_steps_aside_between_requests_for_a_waited_job() {
     assert_eq!(job.wait(), Ok(json!(1)));
     rt.block_on(waited).unwrap();
     assert_eq!(*log.lock().unwrap(), ["flow", "explain", "flow"]);
+}
+
+#[test]
+fn a_late_apple_probe_guards_queued_jobs_and_backups() {
+    let (rt, slots, log) = (runtime(), Slots::default(), Log::default());
+    let mut apple = seat(1, "Apple", vec![Ok(json!("wrong"))], &log);
+    apple.preset.provider = Provider::Apple;
+    let held = slots.try_take(&apple.preset, TaskId::StudyCards).unwrap();
+    let backup = seat(2, "Backup", vec![Ok(json!("right"))], &log);
+    let languages = Arc::new(Mutex::new(None));
+    let d = Dispatch {
+        rt: Some(&rt),
+        waker: &quiet(),
+        slots: &slots,
+        apple_languages: &languages,
+    };
+    let job: Running<Value> = d.ask_in(
+        TaskId::StudyCards,
+        vec![apple, backup],
+        Some("my".into()),
+        |backend: Arc<dyn Backend>, _, _| async move { backend.ask(&prompt(), &|_| {}).await },
+    );
+    *languages.lock().unwrap() = Some(vec!["en-US".into()]);
+    drop(held);
+    assert_eq!(job.wait(), Ok(json!("right")));
+    assert_eq!(*log.lock().unwrap(), ["Backup"]);
+
+    let mut apple = seat(3, "Apple", vec![Ok(json!("english"))], &log);
+    apple.preset.provider = Provider::Apple;
+    let job: Running<Value> = d.ask_in(
+        TaskId::StudyCards,
+        vec![apple],
+        Some("en".into()),
+        |backend: Arc<dyn Backend>, _, _| async move { backend.ask(&prompt(), &|_| {}).await },
+    );
+    assert_eq!(job.wait(), Ok(json!("english")));
 }

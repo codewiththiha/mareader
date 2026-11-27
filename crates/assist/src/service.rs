@@ -115,7 +115,7 @@ impl Assist {
 
     /// The AI Dictionary's answerer, on the settings followed when asked.
     pub fn explainer(&self) -> Arc<dyn Explainer> {
-        Arc::new(explainer::AiExplainer(self.jobs_on.clone()))
+        Arc::new(explainer::AiExplainer(self.jobs_on.clone(), None))
     }
 
     /// Everyone the engine asks; each reads the settings as a job starts.
@@ -236,13 +236,21 @@ impl Assist {
     /// Rewrites one page with its task's model; news comes by polling.
     pub fn rewrite(&self, job: PageJob) -> Rewriting {
         let skill = mareader_settings::Skill::Builtin(job.rewrite.task());
+        let language = match &job.rewrite {
+            crate::page::Rewrite::Translate(name) => Some(
+                mareader_settings::language_tag(name)
+                    .unwrap_or(name)
+                    .to_owned(),
+            ),
+            _ => None,
+        };
         let step = move |backend: Arc<dyn Backend>, retry, say: Say<Rewritten, Rewritten>| {
             let ask = job.clone().ask();
             async move { rewrite(backend.as_ref(), &ask, &|r| say.partial(r), retry).await }
         };
         let now = self.jobs_on.followed();
         let (route, who) = (now.skill_route(skill), now.asker(TaskId::SelectionAi));
-        self.jobs_on.dispatch().ask(who, route, step)
+        self.jobs_on.dispatch().ask_in(who, route, language, step)
     }
 
     pub fn board(&self) -> &Board {
@@ -253,6 +261,7 @@ impl Assist {
     pub fn poll(&mut self) -> bool {
         let mut changed = false;
         let (board, slots) = (&mut self.board, &self.jobs_on.slots);
+        let jobs_on = self.jobs_on.clone();
         self.jobs.retain_mut(|job| {
             let Some(reply) = job.answer() else {
                 return true;
@@ -262,6 +271,11 @@ impl Assist {
                     slots.count(provider, lanes);
                 }
                 board.finish(reply);
+                let languages = match board.apple.ready() {
+                    Some(AppleState::Ready(languages)) => Some(languages.clone()),
+                    _ => None,
+                };
+                jobs_on.apple_languages(languages);
             }
             changed = true;
             false

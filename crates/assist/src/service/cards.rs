@@ -70,6 +70,7 @@ impl CardWriter for AiCards {
     fn write(&self, words: Vec<Wanted>) -> Box<CardJob> {
         let now = self.now();
         let (words, language) = (Arc::new(words), now.ai.study_language());
+        let tag = now.ai.tasks.study.language.clone();
         // Each card comes as it is written, so a waiting deck fills.
         let step = move |backend: Arc<dyn Backend>, retry, say: Say<_, _>| {
             let words = Arc::clone(&words);
@@ -83,7 +84,7 @@ impl CardWriter for AiCards {
         };
         let id = TaskId::StudyCards;
         let (who, route) = (now.asker(id), now.route(id));
-        let job: Running<Vec<Option<Written>>> = self.0.dispatch().ask(who, route, step);
+        let job: Running<Vec<Option<Written>>> = self.0.dispatch().ask_in(who, route, tag, step);
         Box::new(job)
     }
 
@@ -101,6 +102,7 @@ impl Judge for AiCards {
     fn judge(&self, attempt: Attempt) -> Box<JudgeJob> {
         let now = self.now();
         let (attempt, language) = (Arc::new(attempt), now.ai.study_language());
+        let tag = now.ai.tasks.study.language.clone();
         let step = move |backend: Arc<dyn Backend>, retry, _: Say<_, _>| {
             let attempt = Arc::clone(&attempt);
             async move {
@@ -113,7 +115,7 @@ impl Judge for AiCards {
         };
         let id = TaskId::StudyJudge;
         let (who, route) = (now.asker(id), now.route(id));
-        let job: Running<Judged> = self.0.dispatch().ask(who, route, step);
+        let job: Running<Judged> = self.0.dispatch().ask_in(who, route, tag, step);
         Box::new(job)
     }
 }

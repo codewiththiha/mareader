@@ -38,7 +38,7 @@ pub use ai::{
 pub use ai_backups::Backups;
 pub use ai_job::Job;
 pub use ai_task::{Class, Retry, Routes, TaskId, TaskSpec, no_model};
-pub use language::effective_language;
+pub use language::{effective_language, language_tag};
 pub use load::{Loaded, load, to_json};
 pub use reader::{
     AppearanceMenuStyle, Bar, ChromeSettings, FloatingLabelStyle, Highlight, LayoutSettings,

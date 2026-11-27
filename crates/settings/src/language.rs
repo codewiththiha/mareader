@@ -2,6 +2,14 @@
 
 use mareader_dict::LANGUAGES;
 
+/// The catalog tag for an English language name.
+pub fn language_tag(name: &str) -> Option<&'static str> {
+    LANGUAGES
+        .iter()
+        .find(|l| l.name.eq_ignore_ascii_case(name))
+        .map(|l| l.tag)
+}
+
 /// A usable catalog tag: preference, dictionary default, then English.
 /// Confirmed unsupported languages fall back to English, then the first
 /// supported catalog entry. Unknown capability leaves the preference alone.

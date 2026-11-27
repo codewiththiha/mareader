@@ -28,7 +28,7 @@ pub use mareader_assist::{Board, Job};
 pub struct Ai {
     #[cfg(not(target_arch = "wasm32"))]
     assist: Option<mareader_assist::Assist>,
-    made_for: Option<(AiSettings, Option<String>)>,
+    made_for: Option<(AiSettings, Option<String>, Option<Vec<String>>)>,
     /// The library run under way; dropping it stops the run.
     #[cfg(not(target_arch = "wasm32"))]
     organizing: Option<mareader_assist::Organizing>,
@@ -57,10 +57,14 @@ impl Ai {
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(assist) = &mut self.assist {
             assist.poll();
-            let key = (ai.clone(), dictionary.map(str::to_owned));
+            let apple = assist.board().apple.ready().and_then(|state| match state {
+                mareader_assist::AppleState::Ready(languages) => Some(languages.clone()),
+                _ => None,
+            });
+            let key = (ai.clone(), dictionary.map(str::to_owned), apple.clone());
             if self.made_for.as_ref() != Some(&key) {
                 self.made_for = Some(key);
-                let resolved = ai.with_dictionary_language(dictionary);
+                let resolved = resolved_settings(ai, dictionary, apple);
                 let _ = assist.configure(&resolved);
                 return Some(assist.answerers());
             }
@@ -69,13 +73,13 @@ impl Ai {
         None
     }
 
-    /// Probes Apple's language list once when it is the translation model.
+    /// Probes Apple's language list when any saved model can need it.
     #[cfg(target_os = "macos")]
     pub fn probe_translation(&mut self, ai: &AiSettings) {
-        let skill = mareader_settings::Skill::Builtin(mareader_settings::PageTask::Translate);
         let apple = ai
-            .skill_model(skill)
-            .is_some_and(|m| m.provider == mareader_settings::Provider::Apple);
+            .presets
+            .iter()
+            .any(|m| m.provider == mareader_settings::Provider::Apple);
         let idle = self
             .board()
             .is_some_and(|b| b.apple == mareader_assist::Load::Idle);
@@ -266,6 +270,65 @@ fn request(ask: &Ask, batch: u16) -> mareader_assist::Request {
         shelves,
         batch: usize::from(batch),
         whole: ask.whole,
+    }
+}
+
+/// Resolves language choices for the first model without changing Settings.
+#[cfg(not(target_arch = "wasm32"))]
+fn resolved_settings(
+    ai: &AiSettings,
+    dictionary: Option<&str>,
+    apple: Option<Vec<String>>,
+) -> AiSettings {
+    use mareader_settings::{Provider, TaskId, effective_language};
+    let mut resolved = ai.with_dictionary_language(dictionary);
+    let state = apple.map(mareader_assist::AppleState::Ready);
+    for id in [TaskId::Explain, TaskId::StudyCards] {
+        if ai.model(id).is_some_and(|p| p.provider == Provider::Apple) {
+            let language = match id {
+                TaskId::Explain => &mut resolved.tasks.explain.language,
+                _ => &mut resolved.tasks.study.language,
+            };
+            let speaks = |tag: &str| state.as_ref().and_then(|s| s.speaks(tag));
+            if let Some(tag) = effective_language(language.as_deref(), None, &speaks) {
+                *language = Some(tag.to_owned());
+            }
+        }
+    }
+    resolved
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod language_tests {
+    use super::*;
+    use mareader_settings::{Provider, TaskId};
+
+    #[test]
+    fn late_probe_and_model_switch_resolve_without_losing_preferences() {
+        let mut ai = AiSettings::default();
+        let apple = ai.add_preset(Provider::Apple, "");
+        let other = ai.add_preset(Provider::Ollama, "test");
+        ai.tasks.choose(TaskId::Explain, Some(apple));
+        ai.tasks.explain.language = Some("my".into());
+        assert_eq!(
+            resolved_settings(&ai, Some("fr"), None)
+                .tasks
+                .explain
+                .language
+                .as_deref(),
+            Some("my")
+        );
+        let known = Some(vec!["en-US".into(), "ja-JP".into()]);
+        let resolved = resolved_settings(&ai, Some("fr"), known.clone());
+        assert_eq!(resolved.tasks.explain.language.as_deref(), Some("en"));
+        assert_eq!(resolved.tasks.study.language.as_deref(), Some("en"));
+        let only_japanese = resolved_settings(&ai, Some("fr"), Some(vec!["ja-JP".into()]));
+        assert_eq!(only_japanese.tasks.explain.language.as_deref(), Some("ja"));
+        assert_eq!(ai.tasks.explain.language.as_deref(), Some("my"));
+        ai.tasks.choose(TaskId::Explain, Some(other));
+        let restored = resolved_settings(&ai, Some("fr"), known);
+        assert_eq!(restored.tasks.explain.language.as_deref(), Some("my"));
+        assert_eq!(restored.tasks.study.language.as_deref(), Some("fr"));
     }
 }
 

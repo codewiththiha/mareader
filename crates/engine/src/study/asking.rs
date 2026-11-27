@@ -58,6 +58,7 @@ impl Said {
 /// A word being asked: what comes back, and the flag that stops it.
 pub struct Ask {
     pub rx: Receiver<Got>,
+    pub language: Option<&'static str>,
     stop: Arc<AtomicBool>,
 }
 
@@ -75,6 +76,7 @@ pub fn ask(
     (word, context, hint): (String, String, Option<Pos>),
 ) -> Ask {
     let (tx, rx) = channel();
+    let language = explainer.language();
     let stop = Arc::new(AtomicBool::new(false));
     let told = Arc::clone(&stop);
     std::thread::spawn(move || {
@@ -93,7 +95,7 @@ pub fn ask(
         let _ = tx.send(Got::Done(said));
         wake();
     });
-    Ask { rx, stop }
+    Ask { rx, language, stop }
 }
 
 #[cfg(test)]

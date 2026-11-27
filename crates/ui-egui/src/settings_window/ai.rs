@@ -173,7 +173,9 @@ fn dictionary(ui: &mut Ui, ai: &mut AiSettings, (h, gloss): Looks<'_>, board: Op
     {
         note(
             ui,
-            &format!("Apple Intelligence doesn't write {name}. Pick a language it lists."),
+            &format!(
+                "Apple Intelligence doesn't write {name}; a supported language is used instead. Your choice is kept."
+            ),
         );
     }
 }

@@ -57,9 +57,9 @@ pub struct State {
     /// The tagger's class per card, a guess the AI is given.
     hints: HashMap<Key, Pos>,
     /// Finished answers not yet filed, as inline asks leave them.
-    done: Vec<(Key, Said)>,
+    done: Vec<(Key, Said, Option<&'static str>)>,
     /// Answers filed with their marks, still to go to the AI dictionary.
-    filed: Vec<(Key, Said)>,
+    filed: Vec<(Key, Said, Option<&'static str>)>,
     /// Answers sent to the AI dictionary, and the replace offers raised.
     pub(crate) ai_dict: Filing,
     next_loose: u64,
@@ -111,7 +111,7 @@ impl State {
     }
 
     /// Answers that came since last taken, for the AI dictionary.
-    pub(crate) fn take_filed(&mut self) -> Vec<(Key, Said)> {
+    pub(crate) fn take_filed(&mut self) -> Vec<(Key, Said, Option<&'static str>)> {
         std::mem::take(&mut self.filed)
     }
 
@@ -306,7 +306,11 @@ impl State {
     }
 
     fn ask(&mut self, wake: Waker, key: Key, word: &str, context: &str) {
-        let explainer = Arc::clone(&self.explainer);
+        let explainer = self
+            .explainer
+            .snapshot()
+            .unwrap_or_else(|| Arc::clone(&self.explainer));
+        let language = explainer.language();
         let hint = self.hints.get(&key).copied();
         self.partial.remove(&key);
         if (self.inline && !explainer.waits()) || cfg!(target_arch = "wasm32") {
@@ -314,7 +318,7 @@ impl State {
                 Ok((info, by)) => {
                     let info = info.clamped();
                     let word = word.to_owned();
-                    self.done.push((key, Said { info, by, word }));
+                    self.done.push((key, Said { info, by, word }, language));
                 }
                 Err(e) => {
                     self.failed.insert(key, e);
@@ -340,12 +344,12 @@ impl State {
                         changed = true;
                     }
                     Ok(Got::Done(answer)) => {
-                        done.push((*key, Some(answer)));
+                        done.push((*key, Some(answer), ask.language));
                         changed = true;
                         break;
                     }
                     Err(TryRecvError::Disconnected) => {
-                        done.push((*key, None));
+                        done.push((*key, None, ask.language));
                         changed = true;
                         break;
                     }
@@ -353,12 +357,12 @@ impl State {
                 }
             }
         }
-        for (key, answer) in done {
+        for (key, answer, language) in done {
             self.asking.remove(&key);
             self.askers.remove(&key);
             self.partial.remove(&key);
             match answer {
-                Some(Ok(said)) => self.done.push((key, said)),
+                Some(Ok(said)) => self.done.push((key, said, language)),
                 Some(Err(e)) => {
                     self.failed.insert(key, e);
                     self.lapsed.push(key);
@@ -377,14 +381,14 @@ impl State {
             self.unmark(main, key);
         }
         let wall = crate::library::wall_ms();
-        for (key, said) in std::mem::take(&mut self.done) {
+        for (key, said, language) in std::mem::take(&mut self.done) {
             if let Key::Mark(id) = key {
                 let gloss = Some(said.gloss());
                 if !main.set_gloss(id, gloss.clone(), wall) {
                     self.loose.set_gloss(id, gloss, wall);
                 }
             }
-            self.filed.push((key, said.clone()));
+            self.filed.push((key, said.clone(), language));
             self.answers.insert(key, said);
         }
     }

@@ -36,6 +36,16 @@ impl Skiller for AiSkills {
     fn run(&self, ask: SkillAsk) -> Box<SkillJob> {
         let now = self.0.followed();
         let skill = Skill::parse(&ask.skill);
+        let tag = (skill == Some(Skill::Builtin(mareader_settings::PageTask::Translate)))
+            .then(|| {
+                Some(
+                    ask.language
+                        .clone()
+                        .or_else(|| now.ai.tasks.translate.language.clone())
+                        .unwrap_or_else(|| "en".to_owned()),
+                )
+            })
+            .flatten();
         let rule = skill.and_then(|s| rule_for(&now.ai, s, ask.language.as_deref()));
         let route = skill.map(|s| now.skill_route(s)).unwrap_or_default();
         let failed = match (&rule, route.is_empty()) {
@@ -66,7 +76,7 @@ impl Skiller for AiSkills {
             }
         };
         let who = now.asker(TaskId::SelectionAi);
-        let job: Running<String> = self.0.dispatch().ask(who, route, step);
+        let job: Running<String> = self.0.dispatch().ask_in(who, route, tag, step);
         Box::new(job)
     }
 }

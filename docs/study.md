@@ -585,8 +585,12 @@ unset choices now follow the dictionary rather than the book or AI Dictionary.
   `meaning` says the same, since field descriptions steer models too.
 - Apple Intelligence writes only the languages it reports
   (`supportedLanguages`, matched on the primary subtag). The others are
-  greyed out in the list, and a language chosen earlier that it can't
-  write gets a note under Tasks.
+  greyed out in the list. A saved language it cannot write falls back to
+  English if supported, otherwise the first supported catalog language;
+  the saved choice returns when a compatible model is selected. The check
+  also applies after a late probe and before each model request. An
+  incompatible Apple backup is skipped rather than changing a request's
+  language or filing an answer under a different language.
 
 ## Pronunciation (2026-10-24)
 

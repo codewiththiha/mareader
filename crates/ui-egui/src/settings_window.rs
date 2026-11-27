@@ -1,5 +1,4 @@
 //! The settings window: a modal with a sidebar of tabs, grouped.
-
 use egui::{
     Align, Button, Color32, CornerRadius, Frame, Layout, Margin, Rect, RichText, Sense, Stroke, Ui,
     UiBuilder, Vec2, pos2, vec2,
@@ -16,7 +15,6 @@ use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent, UiCommand};
 use crate::widgets;
 use mareader_engine::command::Command;
-
 #[cfg(not(target_arch = "wasm32"))]
 mod ai;
 mod dictionary;
@@ -39,10 +37,9 @@ mod study;
 mod updates;
 mod vocabulary;
 mod voice_model;
-pub use voice_model::accent;
-
 use mareader_engine::scope::{Applies, Scope};
 pub use read_aloud::Voices;
+pub use voice_model::accent;
 
 /// Its size at most; below that, it takes [`SHARE`] of the window.
 pub const MAX_SIZE: Vec2 = vec2(760.0, 960.0);
@@ -343,7 +340,14 @@ fn tab_body(
         Tab::Dictionary => dictionary::tab(ui, &mut s.dictionary, live.dict, out),
         Tab::Study => {
             let writers = mareader_engine::study_mode::writers(s, live.dict);
-            study::tab(ui, s, writers, out);
+            study::tab(
+                ui,
+                s,
+                writers,
+                #[cfg(not(target_arch = "wasm32"))]
+                live.ai.board(),
+                out,
+            );
         }
         #[cfg(not(target_arch = "wasm32"))]
         Tab::Ai => {

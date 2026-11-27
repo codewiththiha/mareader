@@ -1,10 +1,17 @@
 //! Who explains words: a contract, and the answerers every build has.
 
+use std::sync::Arc;
+
 use crate::answer::WordInfo;
 use crate::class::Pos;
 
 /// Explains a word in context; runs on a worker, so it may block.
 pub trait Explainer: Send + Sync {
+    /// Pins changing settings for a request and its dictionary filing.
+    fn snapshot(&self) -> Option<Arc<dyn Explainer>> {
+        None
+    }
+
     /// The answer; `partial` sees it fill in, when the answerer streams.
     fn explain(
         &self,

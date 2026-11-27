@@ -10,11 +10,8 @@ impl Session {
     /// Files the Explain answers that came, when an AI wrote them.
     pub(crate) fn study_file(&mut self) {
         let filed = self.study.take_filed();
-        let Some(language) = self.study.language() else {
-            return;
-        };
-        for (key, said) in filed {
-            if let Some(saved) = of_said(&said, language) {
+        for (key, said, language) in filed {
+            if let Some(saved) = language.and_then(|language| of_said(&said, language)) {
                 let ticket = self.dict.remember(vec![saved.clone()], false);
                 self.study.ai_dict.sent(ticket, key, saved);
             }

@@ -16,7 +16,9 @@ use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use mareader_settings::{AiSettings, Class, ModelPreset, PresetId, Retry, Skill, TaskId, no_model};
+use mareader_settings::{
+    AiSettings, Class, ModelPreset, PresetId, Provider, Retry, Skill, TaskId, no_model,
+};
 use mareader_study::{Failure, Why};
 use serde_json::Value;
 use tokio::runtime::Runtime;
@@ -108,6 +110,7 @@ pub(crate) struct Dispatcher {
     pub waker: Waker,
     pub slots: Slots,
     now: Arc<Mutex<Arc<Followed>>>,
+    apple_languages: Arc<Mutex<Option<Vec<String>>>>,
 }
 
 impl Dispatcher {
@@ -117,6 +120,7 @@ impl Dispatcher {
             waker,
             slots: Slots::default(),
             now: Arc::default(),
+            apple_languages: Arc::default(),
         }
     }
 
@@ -136,6 +140,13 @@ impl Dispatcher {
         };
         if let Ok(mut now) = self.now.lock() {
             *now = Arc::new(followed);
+        }
+    }
+
+    /// The most recently reported Apple capabilities, shared with queued jobs.
+    pub fn apple_languages(&self, languages: Option<Vec<String>>) {
+        if let Ok(mut current) = self.apple_languages.lock() {
+            *current = languages;
         }
     }
 
@@ -164,6 +175,7 @@ impl Dispatcher {
             rt: self.rt(),
             waker: &self.waker,
             slots: &self.slots,
+            apple_languages: &self.apple_languages,
         }
     }
 }
@@ -173,10 +185,12 @@ pub(crate) struct Dispatch<'a> {
     pub rt: Option<&'a Runtime>,
     pub waker: &'a Waker,
     pub slots: &'a Slots,
+    pub apple_languages: &'a Arc<Mutex<Option<Vec<String>>>>,
 }
 
 impl Dispatch<'_> {
     /// One request: `step` asks one model, and is called again per model.
+    #[cfg(test)]
     pub fn ask<O, P, S, Fut>(
         &self,
         who: impl Into<Asker>,
@@ -189,8 +203,27 @@ impl Dispatch<'_> {
         S: Fn(Arc<dyn Backend>, Retry, Say<O, P>) -> Fut + Send + 'static,
         Fut: Future<Output = Result<O, Failure>> + Send + 'static,
     {
+        self.ask_in(who, route, None, step)
+    }
+
+    /// A request with a fixed output language, checked against each model
+    /// again after queueing and before every backend request.
+    pub fn ask_in<O, P, S, Fut>(
+        &self,
+        who: impl Into<Asker>,
+        route: Vec<Seat>,
+        language: Option<String>,
+        step: S,
+    ) -> Running<O, P>
+    where
+        O: Send + 'static,
+        P: Send + 'static,
+        S: Fn(Arc<dyn Backend>, Retry, Say<O, P>) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<O, Failure>> + Send + 'static,
+    {
         let (slots, who) = (self.slots.clone(), who.into());
-        let job = move |say| asked(slots, who, route, step, say);
+        let languages = Arc::clone(self.apple_languages);
+        let job = move |say| asked(slots, who, route, language, languages, step, say);
         start(self.rt, self.waker, job)
     }
 
@@ -259,6 +292,8 @@ async fn asked<O, P, S, Fut>(
     slots: Slots,
     who: Asker,
     route: Vec<Seat>,
+    language: Option<String>,
+    languages: Arc<Mutex<Option<Vec<String>>>>,
     step: S,
     say: Say<O, P>,
 ) -> Result<O, Failure>
@@ -296,6 +331,9 @@ where
             inner: seat.backend,
             again: Box::new(move |why, attempt| again.send(Event::Again { why, attempt })),
             last: Mutex::new((0, None)),
+            language: language.clone(),
+            languages: Arc::clone(&languages),
+            apple: seat.preset.provider == Provider::Apple,
         };
         tried.push(name);
         match step(Arc::new(backend), retry, say.clone()).await {
@@ -310,7 +348,10 @@ where
 /// Failures the next model may not share.
 fn moves_on(f: &Failure) -> bool {
     use Why::{Busy, KeysRejected, Offline, TimedOut};
-    matches!(f.why, Busy | Offline | TimedOut | KeysRejected)
+    matches!(
+        f.why,
+        Busy | Offline | TimedOut | KeysRejected | Why::Language
+    )
 }
 
 /// `f`, naming every model asked when there was more than one.
@@ -333,6 +374,9 @@ struct Counting {
     again: Box<dyn Fn(Why, u8) + Send + Sync>,
     /// Asks so far, and why the last one failed.
     last: Mutex<(u8, Option<Why>)>,
+    language: Option<String>,
+    languages: Arc<Mutex<Option<Vec<String>>>>,
+    apple: bool,
 }
 
 impl Backend for Counting {
@@ -350,7 +394,24 @@ impl Backend for Counting {
             (self.again)(why.unwrap_or(Why::BadAnswer), attempt);
         }
         Box::pin(async move {
-            let got = self.inner.ask(prompt, partial).await;
+            let unsupported = self.apple
+                && self.language.as_deref().is_some_and(|tag| {
+                    self.languages
+                        .lock()
+                        .ok()
+                        .and_then(|l| l.clone())
+                        .is_some_and(|l| {
+                            crate::board::AppleState::Ready(l).speaks(tag) == Some(false)
+                        })
+                });
+            let got = if unsupported {
+                Err(Failure::detailed(
+                    Why::Language,
+                    "Apple Intelligence does not support this language",
+                ))
+            } else {
+                self.inner.ask(prompt, partial).await
+            };
             if let Ok(mut last) = self.last.lock() {
                 last.1 = got.as_ref().err().map(|f| f.why);
             }

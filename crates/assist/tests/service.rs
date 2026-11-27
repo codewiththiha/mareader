@@ -69,6 +69,25 @@ fn preset(ai: &AiSettings) -> ModelPreset {
 }
 
 #[test]
+fn an_explainer_snapshot_keeps_the_language_of_its_request() {
+    let (_rt, server) = server(vec![Answer::stream(&[QUICK])]);
+    let dir = tempfile::tempdir().unwrap();
+    let mut a = assist(&dir);
+    let mut ai = settings(Provider::Ollama, &server.url);
+    ai.tasks.explain.language = Some("fr".into());
+    let live = a.configure(&ai);
+    let frozen = live.snapshot().unwrap();
+    ai.tasks.explain.language = Some("my".into());
+    let _ = a.configure(&ai);
+    assert_eq!(live.language(), Some("Burmese"));
+    assert_eq!(frozen.language(), Some("French"));
+    assert!(explain(frozen.as_ref()).0.is_ok());
+    let sent = server.seen()[0].body.to_string();
+    assert!(sent.contains("French"), "{sent}");
+    assert!(!sent.contains("Burmese"), "{sent}");
+}
+
+#[test]
 fn a_local_server_answers_without_keys() {
     let models = r#"{"data":[{"id":"llama3.2"}]}"#;
     let pieces = [&QUICK[..30], &QUICK[30..]];

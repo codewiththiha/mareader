@@ -21,7 +21,13 @@ const SECONDS: (&str, &str) = (" s", " s");
 const BARE: (&str, &str) = ("", "");
 
 /// The tab, given who could write the cards: an AI, a dictionary.
-pub fn tab(ui: &mut Ui, s: &mut Settings, (ai, dict): (bool, bool), out: &mut Commands) {
+pub fn tab(
+    ui: &mut Ui,
+    s: &mut Settings,
+    (ai, dict): (bool, bool),
+    #[cfg(not(target_arch = "wasm32"))] board: Option<&mareader_assist::Board>,
+    out: &mut Commands,
+) {
     let level = level(s.study.cefr.level);
     section_help(ui, "Mode", &[("", &level)]);
     group(ui, |ui| {
@@ -40,7 +46,7 @@ pub fn tab(ui: &mut Ui, s: &mut Settings, (ai, dict): (bool, bool), out: &mut Co
         switch_row(ui, "Ask before adding to memorized", hint, ask);
     });
     #[cfg(not(target_arch = "wasm32"))]
-    model(ui, &mut s.ai);
+    model(ui, &mut s.ai, board);
     space(ui, out);
 }
 
@@ -115,12 +121,21 @@ fn proactive(ui: &mut Ui, m: &mut StudyModeSettings, both: bool) {
 /// Study's own models and language; each follows the AI Dictionary's unset.
 /// With no model set up there is nothing to pick.
 #[cfg(not(target_arch = "wasm32"))]
-fn model(ui: &mut Ui, ai: &mut mareader_settings::AiSettings) {
+fn model(
+    ui: &mut Ui,
+    ai: &mut mareader_settings::AiSettings,
+    board: Option<&mareader_assist::Board>,
+) {
     use super::ai::{Home, model_row, placed};
     const SAME: &str = "Same as Dictionary";
     if ai.presets.is_empty() {
         return;
     }
+    let apple = ai
+        .model(mareader_settings::TaskId::StudyCards)
+        .is_some_and(|p| p.provider == mareader_settings::Provider::Apple);
+    let state = board.and_then(|b| b.apple.ready()).filter(|_| apple);
+    let speaks = |tag: &str| state.and_then(|s| s.speaks(tag));
     section(ui, "AI");
     group(ui, |ui| {
         for task in placed(Home::Study) {
@@ -131,7 +146,6 @@ fn model(ui: &mut Ui, ai: &mut mareader_settings::AiSettings) {
                     in English. Same as Dictionary uses its default, or English";
         row(ui, "Cards in", hint, |ui| {
             let language = &mut ai.tasks.study.language;
-            let speaks = |_: &str| None::<bool>;
             super::ai::language_picker(ui, ("study-language", SAME), language, &speaks);
         });
     });

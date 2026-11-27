@@ -6,15 +6,25 @@ use mareader_settings::TaskId;
 use mareader_study::{Explainer, Failure, Pos, WordInfo};
 
 use crate::backend::Backend;
-use crate::dispatch::Dispatcher;
+use crate::dispatch::{Dispatcher, Followed};
 use crate::retry::attempt;
 use crate::running::Say;
 use crate::task::Explain;
 
 /// The study tools' answerer: blocks its worker thread, not the UI.
-pub(super) struct AiExplainer(pub(super) Dispatcher);
+pub(super) struct AiExplainer(pub(super) Dispatcher, pub(super) Option<Arc<Followed>>);
+
+impl AiExplainer {
+    fn now(&self) -> Arc<Followed> {
+        self.1.clone().unwrap_or_else(|| self.0.followed())
+    }
+}
 
 impl Explainer for AiExplainer {
+    fn snapshot(&self) -> Option<Arc<dyn Explainer>> {
+        Some(Arc::new(Self(self.0.clone(), Some(self.now()))))
+    }
+
     fn explain(
         &self,
         word: &str,
@@ -41,8 +51,9 @@ impl Explainer for AiExplainer {
         partial: &(dyn Fn(WordInfo) + Sync),
         stop: &(dyn Fn() -> bool + Sync),
     ) -> Result<(WordInfo, String), Failure> {
-        let now = self.0.followed();
+        let now = self.now();
         let language = now.ai.explain_language();
+        let tag = now.ai.tasks.explain.language.clone();
         let (word, context): (Arc<str>, Arc<str>) = (word.into(), context.into());
         let step = move |backend: Arc<dyn Backend>, retry, say: Say<WordInfo, WordInfo>| {
             let (word, context) = (Arc::clone(&word), Arc::clone(&context));
@@ -57,16 +68,19 @@ impl Explainer for AiExplainer {
             }
         };
         let id = TaskId::Explain;
-        let job = self.0.dispatch().ask(now.asker(id), now.route(id), step);
+        let job = self
+            .0
+            .dispatch()
+            .ask_in(now.asker(id), now.route(id), tag, step);
         job.wait_until(partial, stop)
     }
 
     fn by(&self) -> String {
-        self.0.followed().by(TaskId::Explain)
+        self.now().by(TaskId::Explain)
     }
 
     fn language(&self) -> Option<&'static str> {
-        let now = self.0.followed();
+        let now = self.now();
         Some(now.ai.explain_language().unwrap_or("English"))
     }
 }

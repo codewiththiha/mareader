@@ -61,7 +61,15 @@ pub(crate) fn language_picker(
     chosen: &mut Option<String>,
     speaks: &dyn Fn(&str) -> Option<bool>,
 ) {
-    let name = chosen.as_deref().and_then(mareader_settings::language_name);
+    let name = chosen.as_deref().map(|tag| {
+        if speaks(tag) == Some(false) {
+            mareader_settings::effective_language(Some(tag), None, speaks)
+                .and_then(mareader_settings::language_name)
+                .unwrap_or("No supported language")
+        } else {
+            mareader_settings::language_name(tag).unwrap_or(none)
+        }
+    });
     let mut items = vec![(None, none.to_owned())];
     items.extend(
         LANGUAGES
