@@ -132,7 +132,6 @@ impl MareaderApp {
             ctx.request_repaint();
         }
     }
-
     fn gloss_events(&mut self, ctx: &Context, out: &mut Commands) {
         for (pane, gloss) in self.ui.documents.take_gloss() {
             if study_gloss(&gloss) {
@@ -142,7 +141,6 @@ impl MareaderApp {
             }
         }
     }
-
     fn study_gloss(&mut self, ctx: &Context, out: &mut Commands, pane: PaneId, gloss: Gloss) {
         match gloss {
             Gloss::Explain => out.push(Sent::Engine(Command::Explain(pane))),
@@ -153,6 +151,10 @@ impl MareaderApp {
             ))),
             Gloss::Skill(skill) => {
                 let run = mareader_engine::skills::Action::Run { pane, skill };
+                out.push(Sent::Engine(Command::Skill(run)));
+            }
+            Gloss::TranslateCurrent(tag) => {
+                let run = mareader_engine::skills::Action::Translate { pane, tag };
                 out.push(Sent::Engine(Command::Skill(run)));
             }
             Gloss::Translate(tag) => {
@@ -261,7 +263,6 @@ impl MareaderApp {
             _ => {}
         }
     }
-
     fn poll_services(&mut self, ctx: &Context) {
         let docs = self.ui.documents.as_view(self.session.documents());
         for (pane, _) in &self.ui.pane_rects {
@@ -283,7 +284,13 @@ impl MareaderApp {
         });
         #[cfg(target_arch = "wasm32")]
         let apple: Option<&[String]> = None;
-        crate::language_menu::offer(ctx, crate::language_menu::choices(&ai_look, apple));
+        let dict = self.settings().dictionary.default_lang.as_deref();
+        let packs = self.session.dict().pack_languages();
+        let dictionary = dict.filter(|tag| packs.contains(tag));
+        crate::language_menu::offer(
+            ctx,
+            crate::language_menu::choices(&ai_look, apple, dictionary),
+        );
         self.take_organized();
         #[cfg(not(target_arch = "wasm32"))]
         for toast in self.ui.ai.waiting() {
@@ -432,6 +439,7 @@ fn study_gloss(gloss: &Gloss) -> bool {
             | Gloss::Note
             | Gloss::Skill(_)
             | Gloss::Translate(_)
+            | Gloss::TranslateCurrent(_)
             | Gloss::ManageSkills
             | Gloss::ReadAloud
             | Gloss::ReadFrom(..)

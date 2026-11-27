@@ -4,7 +4,7 @@ use egui::{Context, CornerRadius, Id, Rect, Response, Ui};
 use mareader_dict::LANGUAGES;
 use mareader_settings::{AiSettings, PageTask, Provider, Skill, language_name};
 
-use crate::side_list::{self, Spec};
+use crate::side_list::{self, Shown, Spec};
 use crate::widgets;
 
 pub const FIND: &str = "Find a language";
@@ -16,7 +16,11 @@ pub struct Choices {
 }
 
 /// Builds choices from the first model's capabilities, when reported.
-pub fn choices(ai: &AiSettings, apple_languages: Option<&[String]>) -> Choices {
+pub fn choices(
+    ai: &AiSettings,
+    apple_languages: Option<&[String]>,
+    dictionary: Option<&str>,
+) -> Choices {
     let model = ai.skill_model(Skill::Builtin(PageTask::Translate));
     let known = model
         .filter(|m| m.provider == Provider::Apple)
@@ -47,7 +51,12 @@ pub fn choices(ai: &AiSettings, apple_languages: Option<&[String]>) -> Choices {
     }
     Choices {
         items,
-        current: ai.tasks.translate.language.clone(),
+        current: mareader_settings::effective_language(
+            ai.tasks.translate.language.as_deref(),
+            dictionary,
+            &|tag| known.map(|_| allowed(tag)),
+        )
+        .map(str::to_owned),
     }
 }
 
@@ -79,6 +88,17 @@ pub fn show_beside(
     parent: Option<Rect>,
     row: impl FnOnce(&mut Ui) -> Response,
 ) -> Option<String> {
+    show_beside_action(ui, choices, parent, row).picked
+}
+
+/// The trigger and the chosen submenu item; clicking the trigger is a
+/// separate action from choosing a language.
+pub fn show_beside_action(
+    ui: &mut Ui,
+    choices: &Choices,
+    parent: Option<Rect>,
+    row: impl FnOnce(&mut Ui) -> Response,
+) -> Shown<String> {
     let spec = Spec {
         items: &choices.items,
         find: FIND,
@@ -89,7 +109,6 @@ pub fn show_beside(
     side_list::show_beside(ui, spec, parent, row, |ui, tag, name| {
         widgets::menu_check_row(ui, name, choices.current.as_ref() == Some(tag)).clicked()
     })
-    .picked
 }
 
 #[cfg(test)]
@@ -97,21 +116,49 @@ mod tests {
     use super::*;
 
     #[test]
+    fn follows_dictionary_until_a_manual_choice_and_falls_back_when_needed() {
+        let mut ai = AiSettings::default();
+        assert_eq!(
+            choices(&ai, None, Some("fr")).current.as_deref(),
+            Some("fr")
+        );
+        assert_eq!(choices(&ai, None, None).current.as_deref(), Some("en"));
+        ai.tasks.translate.pick("my");
+        assert_eq!(
+            choices(&ai, None, Some("fr")).current.as_deref(),
+            Some("my")
+        );
+        let id = ai.add_preset(Provider::Apple, "");
+        ai.tasks
+            .choose(mareader_settings::TaskId::SelectionAi, Some(id));
+        let langs = vec!["en-US".into(), "ja-JP".into()];
+        assert_eq!(
+            choices(&ai, Some(&langs), Some("fr")).current.as_deref(),
+            Some("en")
+        );
+        assert_eq!(ai.tasks.translate.language.as_deref(), Some("my"));
+        assert_eq!(
+            choices(&ai, None, Some("fr")).current.as_deref(),
+            Some("my")
+        );
+    }
+
+    #[test]
     fn unknown_model_offers_catalog_and_known_apple_is_filtered() {
         let mut ai = AiSettings::default();
-        let unknown = choices(&ai, None);
+        let unknown = choices(&ai, None, None);
         assert!(unknown.items.iter().any(|(tag, _)| tag == "my"));
         let id = ai.add_preset(Provider::Apple, "");
         ai.tasks
             .choose(mareader_settings::TaskId::SelectionAi, Some(id));
         let langs = vec!["en-US".into(), "ja-JP".into()];
-        let filtered = choices(&ai, Some(&langs));
+        let filtered = choices(&ai, Some(&langs), None);
         assert!(filtered.items.iter().any(|(tag, _)| tag == "ja"));
         assert!(!filtered.items.iter().any(|(tag, _)| tag == "my"));
         let id = ai.add_preset(Provider::Ollama, "");
         ai.tasks
             .choose(mareader_settings::TaskId::SelectionAi, Some(id));
-        let unknown = choices(&ai, Some(&langs));
+        let unknown = choices(&ai, Some(&langs), None);
         assert!(unknown.items.iter().any(|(tag, _)| tag == "my"));
     }
 }

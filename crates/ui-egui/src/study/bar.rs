@@ -27,6 +27,7 @@ pub enum BarPress {
     Highlight(Pen, Option<Rgb>),
     Skill(Skill),
     Translate(String),
+    TranslateCurrent(String),
 }
 
 type Offered = Arc<[(Skill, String)]>;

@@ -40,6 +40,7 @@ mod reading;
 mod search;
 mod selection;
 mod selection_menu;
+mod selection_translate;
 mod settings_dictionary;
 mod settings_search;
 mod shell;

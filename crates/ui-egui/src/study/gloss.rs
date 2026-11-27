@@ -17,6 +17,8 @@ pub enum Gloss {
     Skill(mareader_settings::Skill),
     /// Translate the selection into this language.
     Translate(String),
+    /// Translate with the effective target without setting an override.
+    TranslateCurrent(String),
     /// Open settings to add or edit skills.
     ManageSkills,
     /// Read aloud was pressed: the selection alone is read.

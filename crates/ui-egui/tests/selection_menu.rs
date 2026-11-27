@@ -231,7 +231,7 @@ fn escape_folds_translation_before_closing_the_selection() {
         text: "quick brown".into(),
     }));
     h.run_steps(30);
-    h.get_by_label("Translate").click();
+    h.get_by_label("Translate").hover();
     h.run();
     h.event(egui::Event::Text("japan".into()));
     h.run();
@@ -255,7 +255,7 @@ fn arrow_keys_choose_a_language_without_searching() {
         text: "quick brown".into(),
     }));
     h.run_steps(30);
-    h.get_by_label("Translate").click();
+    h.get_by_label("Translate").hover();
     h.run();
     h.key_press(egui::Key::ArrowDown);
     h.run();

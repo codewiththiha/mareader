@@ -12,9 +12,13 @@ const WIDTH: f32 = 196.0;
 
 pub(super) fn builtins(ui: &mut Ui, parent: Option<Rect>) -> Option<super::BarPress> {
     let choices = crate::language_menu::offered(ui.ctx());
-    let mut chosen =
-        crate::language_menu::show_beside(ui, &choices, parent, |ui| row(ui, "Translate", true))
-            .map(super::BarPress::Translate);
+    let shown = crate::language_menu::show_beside_action(ui, &choices, parent, |ui| {
+        row(ui, "Translate", true)
+    });
+    let mut chosen = shown.picked.map(super::BarPress::Translate);
+    if chosen.is_none() && shown.row.clicked() {
+        chosen = choices.current.map(super::BarPress::TranslateCurrent);
+    }
     for task in [PageTask::Summarize, PageTask::Simplify] {
         if row(ui, task.label(), false).clicked() {
             chosen = Some(super::BarPress::Skill(Skill::Builtin(task)));
