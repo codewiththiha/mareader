@@ -13,6 +13,8 @@ use mareader_settings::{
 };
 use mareader_workspace::PaneId;
 
+mod preset_picker;
+
 const MAX_SIZE: Vec2 = vec2(1000.0, 700.0);
 const OPTIONS_W: f32 = 300.0;
 const FOOT_H: f32 = 52.0;
@@ -252,7 +254,6 @@ impl Open {
 
     /// Choosing, saving, renaming and deleting presets.
     fn presets(&mut self, ui: &mut Ui, draft: &mut Settings) {
-        let t = Tokens::get(ui.ctx());
         let words = &mut draft.study.words;
         // A preset deleted elsewhere stops being the chosen one.
         let known = |n: &String| words.presets.iter().any(|p| &p.name == n);
@@ -260,29 +261,7 @@ impl Open {
             self.preset = None;
         }
         section(ui, "Preset", "");
-        let chosen = self.preset.clone().unwrap_or_else(|| "Custom".into());
-        let mut pick = None;
-        widgets::combo("word-list-preset")
-            .selected_text(chosen)
-            .width(ui.available_width())
-            .show_ui(ui, |ui| {
-                for p in &words.presets {
-                    let star = match words.instant.as_ref() == Some(&p.name) {
-                        true => " ★",
-                        false => "",
-                    };
-                    let on = self.preset.as_ref() == Some(&p.name);
-                    if ui
-                        .selectable_label(on, format!("{}{star}", p.name))
-                        .clicked()
-                    {
-                        pick = Some(p.clone());
-                    }
-                }
-                if words.presets.is_empty() {
-                    ui.label(RichText::new("No presets yet").color(t.muted));
-                }
-            });
+        let pick = preset_picker::pick(ui, &words.presets, &words.instant, &self.preset);
         if let Some(p) = pick {
             words.last = p.list;
             self.preset = Some(p.name);

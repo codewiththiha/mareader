@@ -14,7 +14,10 @@ use mareader_engine::command::Command;
 use mareader_engine::read_aloud::booth::Booth;
 use mareader_engine::settings::Tab;
 use mareader_settings::{Highlight, Player, ReadAloudSettings, Skip};
-use mareader_speech::{Build, Item, Model, Shelf, Stage, Voice};
+use mareader_speech::{Item, Model, Shelf, Stage, Voice};
+
+mod pickers;
+use pickers::build_pick;
 
 /// What the tab shows besides settings: voices, models, the keys.
 pub struct Voices<'a> {
@@ -173,27 +176,6 @@ pub(super) fn offer(model: &Model) -> String {
     }
 }
 
-/// Which build a first download brings; the id when changed.
-fn build_pick(ui: &mut Ui, model: &'static Model, on: &Build) -> Option<&'static str> {
-    let mut pick = on.id;
-    let combo = widgets::combo(("first build", model.id))
-        .selected_text(on.name)
-        .width(72.0);
-    let shown = combo.show_ui(ui, |ui| {
-        for b in model.builds {
-            let size = crate::dict::megabytes(model.bytes_with(b));
-            let r = ui.selectable_value(&mut pick, b.id, format!("{} · {size}", b.name));
-            r.on_hover_text(b.about);
-        }
-    });
-    let label = format!("{} build", model.name);
-    shown
-        .response
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, &label));
-    shown.response.on_hover_text(on.about);
-    (pick != on.id).then_some(pick)
-}
-
 /// What downloaded models keep in memory, once one is downloaded.
 fn memory(ui: &mut Ui, shown: &str, s: &mut ReadAloudSettings, shelf: &Shelf) {
     if shelf.ready().is_empty() {
@@ -224,15 +206,7 @@ fn memory(ui: &mut Ui, shown: &str, s: &mut ReadAloudSettings, shelf: &Shelf) {
         divider(ui);
         let hint = "Counted from when reading pauses or stops";
         row(ui, "Keep a model loaded", hint, |ui| {
-            widgets::combo("model-idle")
-                .width(150.0)
-                .selected_text(idle_label(s.model_idle_min))
-                .show_ui(ui, |ui| {
-                    for minutes in ReadAloudSettings::IDLE_MIN {
-                        let label = idle_label(minutes);
-                        ui.selectable_value(&mut s.model_idle_min, minutes, label);
-                    }
-                });
+            pickers::idle(ui, &mut s.model_idle_min);
         });
         divider(ui);
         row(ui, "In memory now", "", |ui| {
@@ -346,19 +320,7 @@ fn language_filter(ui: &mut Ui, engine: &str, voices: &[Voice], picked: Option<&
         "Language",
         "Shows only voices for this language",
         |ui| {
-            let shown = match language.as_str() {
-                ALL => "All languages".to_owned(),
-                tag => language_name(tag),
-            };
-            widgets::combo(("read-aloud-language", engine))
-                .selected_text(shown)
-                .width(180.0)
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut language, ALL.to_owned(), "All languages");
-                    for tag in &languages {
-                        ui.selectable_value(&mut language, tag.clone(), language_name(tag));
-                    }
-                });
+            pickers::language(ui, engine, &languages, &mut language);
         },
     );
     ui.data_mut(|d| d.insert_temp(id, language.clone()));

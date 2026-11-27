@@ -389,16 +389,15 @@ fn add(ui: &mut Ui, presets: &[ModelPreset], ids: &mut Vec<PresetId>) -> bool {
             "All are in"
         };
         ui.add_enabled_ui(ready, |ui| {
-            widgets::combo("ai-backup-add")
-                .width(PICK_W)
-                .selected_text(shown)
-                .show_ui(ui, |ui| {
-                    for p in &left {
-                        if ui.selectable_label(false, p.title()).clicked() {
-                            picked = Some(p.id);
-                        }
-                    }
-                });
+            let items: Vec<_> = left.iter().map(|p| (Some(p.id), p.title())).collect();
+            crate::dropdown::select(
+                ui,
+                egui::Id::new("ai-backup-add"),
+                shown,
+                PICK_W,
+                &mut picked,
+                &items,
+            );
         });
     });
     let Some(id) = picked else {

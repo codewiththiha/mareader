@@ -229,17 +229,21 @@ fn pick(
     t: &Tokens,
 ) {
     ui.label(RichText::new(name).size(t.text_small).color(t.muted));
-    let list = widgets::combo(("ai-entry", name))
-        .width(ui.available_width())
-        .height(280.0)
-        .selected_text(shown(value))
-        .show_ui(ui, |ui| {
-            for choice in choices {
-                ui.selectable_value(value, choice.clone(), shown(choice));
-            }
-        });
+    let items: Vec<_> = choices
+        .iter()
+        .map(|choice| (choice.clone(), shown(choice)))
+        .collect();
+    let width = ui.available_width();
+    let response = crate::dropdown::select(
+        ui,
+        egui::Id::new(("ai-entry", name)),
+        shown(value),
+        width,
+        value,
+        &items,
+    );
     let info = || WidgetInfo::labeled(WidgetType::ComboBox, true, name);
-    list.response.widget_info(info);
+    response.widget_info(info);
     ui.add_space(4.0);
 }
 

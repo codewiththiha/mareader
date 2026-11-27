@@ -194,6 +194,26 @@ fn an_ai_entry_edits_and_deletes_from_the_card() {
 }
 
 #[test]
+fn the_entry_language_can_be_filtered_and_picked_with_enter() {
+    let dir = shelf();
+    remember(dir.path());
+    let mut h = reader(dir.path());
+    set(&mut h, None, true);
+    look_up(&mut h, "quick");
+    open_editor(&mut h);
+    h.get_by_role_and_label(Role::ComboBox, ai_edit::LANGUAGE)
+        .click();
+    h.run();
+    h.event(egui::Event::Text("english".into()));
+    h.run();
+    h.key_press(egui::Key::Enter);
+    h.run();
+    h.get_by_label(ai_edit::SAVE).click();
+    h.run();
+    h.get_by_label_contains("already has quick (adjective, English)");
+}
+
+#[test]
 fn an_edit_onto_a_kept_entry_asks_before_replacing_it() {
     let dir = shelf();
     remember(dir.path());
@@ -203,6 +223,8 @@ fn an_edit_onto_a_kept_entry_asks_before_replacing_it() {
     open_editor(&mut h);
     let language = (Role::ComboBox, ai_edit::LANGUAGE);
     h.get_by_role_and_label(language.0, language.1).click();
+    h.run();
+    h.event(egui::Event::Text("english".into()));
     h.run();
     h.get_all_by_label("English").last().unwrap().click();
     h.run();

@@ -14,7 +14,8 @@ pub fn select<T: Clone + PartialEq>(
     chosen: &mut T,
     items: &[(T, String)],
 ) -> Response {
-    widgets::combo(id)
+    let mut made_pick = false;
+    let mut response = widgets::combo(id)
         .selected_text(shown)
         .width(width)
         .wrap_mode(egui::TextWrapMode::Truncate)
@@ -34,8 +35,13 @@ pub fn select<T: Clone + PartialEq>(
                 });
             if let Some(value) = picked {
                 *chosen = value;
+                made_pick = true;
                 ui.close();
             }
         })
-        .response
+        .response;
+    if made_pick {
+        response.mark_changed();
+    }
+    response
 }
