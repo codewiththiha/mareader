@@ -376,7 +376,7 @@ mod tests {
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             let t = Tokens::new(&Appearance::default());
             let mut toasts = super::super::Toasts::default();
-            for label in ["Open cards", "Undo"] {
+            for label in ["Open cards", "Resume", "Undo"] {
                 let action = mareader_engine::study::Action::Restore(Vec::new());
                 let command = mareader_engine::command::Command::Study(action);
                 toasts
@@ -387,6 +387,8 @@ mod tests {
                 let target = action_at(rect, &card);
                 if label == mareader_engine::study_mode::OPEN_CARDS {
                     assert_eq!(card.action, ARROW_W);
+                } else {
+                    assert!(card.action > ARROW_W, "{label} should keep its text");
                 }
                 let shown = action_button(ui, target, live, t.ink).rect;
                 assert!(
