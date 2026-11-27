@@ -10,7 +10,11 @@ pub(super) fn draw(ui: &Ui, rect: Rect, key: u128, reveal: &Option<(u128, bool, 
     let now = ui.input(|i| i.time);
     let strength = if crate::motion::enabled(ui.ctx()) {
         ((until - now) / 5.0).clamp(0.0, 1.0) as f32
-    } else if now < until { 1.0 } else { 0.0 };
+    } else if now < until {
+        1.0
+    } else {
+        0.0
+    };
     if strength <= 0.0 {
         return;
     }
@@ -25,6 +29,7 @@ pub(super) fn draw(ui: &Ui, rect: Rect, key: u128, reveal: &Option<(u128, bool, 
     if crate::motion::enabled(ui.ctx()) {
         ui.ctx().request_repaint_after_secs(1.0 / 30.0);
     } else {
-        ui.ctx().request_repaint_after_secs((until - now).max(0.0) as f32);
+        ui.ctx()
+            .request_repaint_after_secs((until - now).max(0.0) as f32);
     }
 }

@@ -110,3 +110,27 @@ fn ai_selection_answers_can_be_selected_and_deleted() {
     h.run_steps(6);
     assert!(h.query_by_label("AI selection results").is_none());
 }
+
+#[test]
+fn note_navigation_returns_to_filtered_notes() -> Result<(), Box<dyn std::error::Error>> {
+    use mareader_engine::{command::Command, library::Action, route::Route};
+    use mareader_ui_egui::ui_command::Sent;
+    let raven = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../epub/tests/books/the-raven-gutenberg-17192.epub").canonicalize()?;
+    let mut h = reader(&[("epub", raven.to_str().ok_or("UTF-8 path")?)]);
+    h.run_steps(10);
+    h.state_mut().queue(Sent::Engine(Command::Library(Action::SeedMarks)));
+    h.state_mut().queue(Sent::Engine(Command::ShowSpace(Room::Notes)));
+    h.run_steps(10);
+    h.get_by_label("Notes 4").click();
+    h.run_steps(5);
+    h.get_by_label("Open Nothing that we despise in other men is inherently absurd.").click();
+    h.run_steps(30);
+    assert_eq!(h.state().route(), Route::Reader);
+    h.get_by_label("Go back to notes").click();
+    h.run_steps(10);
+    assert_eq!(h.state().session().room(), Room::Notes);
+    assert!(h.query_by_label("Open Nothing that we despise in other men is inherently absurd.").is_some());
+    assert!(h.query_by_label("Open The mind is its own place.").is_none());
+    Ok(())
+}

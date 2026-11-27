@@ -17,8 +17,14 @@ impl MareaderApp {
             return;
         }
         if let Some((saved, at)) = self.ui.saved_ai_on_open {
-            if let Some(id) = self.session.skills().asks().iter()
-                .find(|ask| ask.pinned == Some(saved)).map(|ask| ask.id) {
+            if let Some(id) = self
+                .session
+                .skills()
+                .asks()
+                .iter()
+                .find(|ask| ask.pinned == Some(saved))
+                .map(|ask| ask.id)
+            {
                 self.ui.saved_ai_on_open = None;
                 self.send(Command::Skill(mareader_engine::skills::Action::Show(id)));
             } else if ctx.input(|i| i.time) - at > 15.0 {
