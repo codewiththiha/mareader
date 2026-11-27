@@ -102,24 +102,35 @@ pub(crate) fn seed(model: &mut Library, now_ms: u64) -> usize {
                 .unwrap_or_default(),
             tries: if recalled { 1 + (i % 3) as u8 } else { 0 },
             first_try: recalled && i.is_multiple_of(3),
-            answers: if lemma == "arcane" {
-                vec![RecallAnswer {
+            answers: match lemma {
+                "arcane" => vec![RecallAnswer {
                     text: "known by very few".into(),
                     verdict: "Correct".into(),
                     feedback: "That fits the sentence.".into(),
-                }]
-            } else {
-                Vec::new()
+                }],
+                "gaunt" => vec![
+                    RecallAnswer {
+                        text: "hungry".into(),
+                        verdict: "Wrong".into(),
+                        feedback: "That describes a cause, not the appearance.".into(),
+                    },
+                    RecallAnswer {
+                        text: "very thin".into(),
+                        verdict: "Close".into(),
+                        feedback: "Thin and worn in appearance.".into(),
+                    },
+                ],
+                _ => Vec::new(),
             },
-            synonyms: if lemma == "arcane" {
-                vec!["obscure".into()]
-            } else {
-                Vec::new()
+            synonyms: match lemma {
+                "arcane" => vec!["obscure".into()],
+                "gaunt" => vec!["haggard".into(), "lean".into()],
+                _ => Vec::new(),
             },
-            usages: if lemma == "arcane" {
-                vec!["An arcane custom.".into()]
-            } else {
-                Vec::new()
+            usages: match lemma {
+                "arcane" => vec!["An arcane custom.".into()],
+                "gaunt" => vec!["His face looked gaunt after the journey.".into()],
+                _ => Vec::new(),
             },
         };
         let at = now_ms.saturating_sub(i as u64 * 9 * DAY_MS);

@@ -1,15 +1,12 @@
 //! A vocabulary row growing into its details, while its dictionary answers.
 
-use egui::{
-    Align, Color32, Context, Id, Label, Layout, Rect, RichText, Sense, Stroke, Ui, UiBuilder, vec2,
-};
-use mareader_dict::{Entry, Reply, Ticket};
-use mareader_engine::space::{self, History, Row};
+mod content;
 
-use super::{look, sentence};
-use crate::icons::Icon;
+use egui::{Align, Color32, Context, Id, Layout, Rect, Sense, Stroke, UiBuilder, vec2};
+use mareader_dict::{Entry, Reply, Ticket};
+use mareader_engine::space::{History, Row};
+
 use crate::theme::{self, Tokens};
-use crate::widgets;
 use crate::z_order::{self, Tier};
 
 const DURATION: f64 = 0.24;
@@ -100,8 +97,8 @@ impl Detail {
         let eased = progress * progress * (3.0 - 2.0 * progress);
         let screen = ctx.content_rect();
         let size = vec2(
-            (screen.width() - 32.0).clamp(0.0, 620.0),
-            (screen.height() - 32.0).clamp(0.0, 590.0),
+            (screen.width() - 32.0).clamp(0.0, 680.0),
+            (screen.height() - 32.0).clamp(0.0, 520.0),
         );
         let target = Rect::from_center_size(screen.center(), size);
         let rect = Rect::from_min_max(
@@ -122,7 +119,7 @@ impl Detail {
             {
                 close = true;
             }
-            ui.painter().rect_filled(rect, t.radius_lg, t.surface);
+            ui.painter().rect_filled(rect, t.radius_lg, t.card);
             ui.painter().rect_stroke(
                 rect,
                 t.radius_lg,
@@ -139,7 +136,7 @@ impl Detail {
                     |ui| {
                         ui.set_clip_rect(inner);
                         ui.set_opacity(content);
-                        let pressed = self.content(ui, t, inner.height());
+                        let pressed = content::show(ui, self, t, inner.height());
                         close |= pressed && progress >= 0.95 && !self.closing;
                     },
                 );
@@ -160,152 +157,6 @@ impl Detail {
         true
     }
 
-    fn content(&self, ui: &mut Ui, t: &Tokens, height: f32) -> bool {
-        let mut close = false;
-        ui.set_width(ui.available_width());
-        ui.horizontal(|ui| {
-            ui.add(Label::new(
-                RichText::new(&self.row.lemma)
-                    .font(theme::semibold(t.text + 10.0))
-                    .color(t.ink),
-            ));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                close = widgets::small_icon_button(ui, Icon::Close, "Close word details").clicked();
-            });
-        });
-        let remaining = (height - 46.0).max(0.0);
-        egui::ScrollArea::vertical()
-            .id_salt("word-detail-scroll")
-            .max_height(remaining)
-            .show(ui, |ui| {
-                self.body(ui, t);
-            });
-        close
-    }
-
-    fn body(&self, ui: &mut Ui, t: &Tokens) {
-        ui.horizontal_wrapped(|ui| {
-            if let Some(pos) = &self.row.pos {
-                look::quiet(ui, pos, t.text, t);
-            }
-            look::level(ui, self.row.band, t);
-            look::tag(
-                ui,
-                space::status_label(self.row.status),
-                look::status(self.row.status, t),
-                6.0,
-            );
-        });
-        let method = match self.row.by {
-            mareader_library::LearnedBy::Proactive => "Card".to_owned(),
-            mareader_library::LearnedBy::Reactive if self.row.tries == 1 => {
-                "Recall · 1 try".to_owned()
-            }
-            mareader_library::LearnedBy::Reactive => format!("Recall · {} tries", self.row.tries),
-        };
-        let metadata = format!("{method}  ·  Last met {}", space::date(self.row.seen));
-        look::quiet(ui, &metadata, t.text_small, t);
-        section(ui, "Meaning", t);
-        let meaning = if self.row.meaning.is_empty() {
-            "No saved meaning."
-        } else {
-            &self.row.meaning
-        };
-        ui.label(RichText::new(meaning).size(t.text + 2.0).color(t.ink));
-        if !self.row.context.is_empty() {
-            section(ui, "From the book", t);
-            ui.add(Label::new(sentence::highlight(&self.row.context, &self.row.form, t)).wrap());
-        }
-        section(ui, "Books", t);
-        ui.label(self.row.books.join(", "));
-        self.extra(ui, t);
-        self.history(ui, t);
-    }
-
-    fn extra(&self, ui: &mut Ui, t: &Tokens) {
-        let mut synonyms = self.row.synonyms.clone();
-        let mut examples = self.row.usages.clone();
-        let mut definitions = Vec::new();
-        if let Some(entries) = &self.entries {
-            for entry in entries {
-                if !entry.definition.is_empty()
-                    && entry.definition != self.row.meaning
-                    && !definitions.contains(&entry.definition)
-                {
-                    definitions.push(entry.definition.clone());
-                }
-                if let Some(ai) = &entry.ai {
-                    for synonym in &ai.synonyms {
-                        if !synonyms.contains(synonym) {
-                            synonyms.push(synonym.clone());
-                        }
-                    }
-                    for usage in &ai.usages {
-                        if !examples.contains(usage) {
-                            examples.push(usage.clone());
-                        }
-                    }
-                }
-            }
-        }
-        if !definitions.is_empty() {
-            section(ui, "Dictionary", t);
-            for item in definitions {
-                ui.label(item);
-            }
-        }
-        section(ui, "Synonyms", t);
-        if synonyms.is_empty() {
-            look::quiet(ui, "None available", t.text, t);
-        } else {
-            ui.label(synonyms.join(", "));
-        }
-        section(ui, "Examples", t);
-        if examples.is_empty() {
-            look::quiet(ui, "None available", t.text, t);
-        } else {
-            for item in examples {
-                ui.label(item);
-            }
-        }
-        if self.entries.is_none() {
-            look::quiet(ui, "Looking up dictionary details…", t.text_small, t);
-        } else if let Some(why) = &self.failure {
-            look::quiet(ui, &format!("Dictionary lookup: {why}"), t.text_small, t);
-        }
-    }
-
-    fn history(&self, ui: &mut Ui, t: &Tokens) {
-        if self.history.is_empty() && self.row.by != mareader_library::LearnedBy::Reactive {
-            return;
-        }
-        section(ui, "Your recall answers", t);
-        if self.history.is_empty() {
-            look::quiet(
-                ui,
-                "No answer text was saved for earlier recalls.",
-                t.text,
-                t,
-            );
-        }
-        for run in &self.history {
-            let title = format!("{} · {}", run.book, space::date(run.when));
-            ui.label(RichText::new(title).color(t.muted));
-            for (i, answer) in run.answers.iter().enumerate() {
-                let title = format!("{}. {}  ·  {}", i + 1, answer.text, answer.verdict);
-                ui.label(RichText::new(title).color(t.ink));
-                if !answer.feedback.is_empty() {
-                    look::quiet(ui, &answer.feedback, t.text_small, t);
-                }
-            }
-            ui.add_space(6.0);
-        }
-    }
-}
-
-fn section(ui: &mut Ui, title: &str, t: &Tokens) {
-    ui.add_space(12.0);
-    look::caption(ui, title, t);
 }
 
 #[cfg(test)]
@@ -335,6 +186,20 @@ mod tests {
             synonyms: Vec::new(),
             usages: Vec::new(),
         }
+    }
+
+    #[test]
+    fn history_repeats_book_and_date_only_when_needed() {
+        let mut word = row();
+        word.books = vec!["One".into()];
+        word.seen = 1_792_225_800_000;
+        let run = History { book: "One".into(), when: word.seen, answers: Vec::new() };
+        let mut detail = Detail::new(word, vec![run.clone()], Rect::NOTHING, 0.0);
+        assert_eq!(content::session_title(&detail, &run), "");
+        detail.history.push(run.clone());
+        assert_eq!(content::session_title(&detail, &run), "Oct 17, 2026");
+        detail.row.books.push("Two".into());
+        assert_eq!(content::session_title(&detail, &run), "One · Oct 17, 2026");
     }
 
     #[test]
