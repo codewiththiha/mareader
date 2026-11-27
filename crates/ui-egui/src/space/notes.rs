@@ -12,7 +12,7 @@ use mareader_engine::space::{self, Kept, NoteGroup, NoteRow, NotesFilter, NotesV
 use mareader_settings::HighlightSettings;
 use std::sync::Arc;
 
-use super::{look, top};
+use super::{look, note_selection::Selection, top};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent};
@@ -40,6 +40,7 @@ pub(super) fn column(
     ui: &mut Ui,
     (view, filter): (&NotesView, &mut NotesFilter),
     (look, narrow): (&HighlightSettings, bool),
+    selection: &mut Selection,
     t: &Tokens,
     out: &mut Commands,
 ) {
@@ -62,12 +63,15 @@ pub(super) fn column(
         widgets::panel_empty(ui, Some(Icon::Note), title, hint);
         return;
     }
+    selection.toolbar(ui, t);
+    selection.begin();
     ui.spacing_mut().item_spacing.y = 10.0;
     for group in &view.groups {
         heading(ui, group, t);
-        sheet(ui, group, look, t, out);
+        sheet(ui, group, look, selection, t, out);
         ui.add_space(8.0);
     }
+    selection.finish();
 }
 
 /// The title and its line beside the search.
@@ -126,7 +130,7 @@ fn heading(ui: &mut Ui, group: &NoteGroup, t: &Tokens) {
 }
 
 /// A book's rows on one raised sheet, a hairline between each.
-fn sheet(ui: &mut Ui, group: &NoteGroup, look: &HighlightSettings, t: &Tokens, out: &mut Commands) {
+fn sheet(ui: &mut Ui, group: &NoteGroup, look: &HighlightSettings, selection: &mut Selection, t: &Tokens, out: &mut Commands) {
     let edge = Stroke::new(1.0, t.line);
     let frame = Frame::new()
         .fill(t.card)
@@ -138,7 +142,7 @@ fn sheet(ui: &mut Ui, group: &NoteGroup, look: &HighlightSettings, t: &Tokens, o
         let last = group.rows.len().saturating_sub(1);
         for (i, row) in group.rows.iter().enumerate() {
             let ends = (i == 0, i == last);
-            if line(ui, row, (look, ends), t) {
+            if line(ui, row, (look, ends), selection, t, out) {
                 out.push(Sent::Engine(Command::OpenMark(row.id)));
             }
             if i < last {
@@ -156,7 +160,9 @@ fn line(
     ui: &mut Ui,
     row: &NoteRow,
     (look, ends): (&HighlightSettings, (bool, bool)),
+    selection: &mut Selection,
     t: &Tokens,
+    out: &mut Commands,
 ) -> bool {
     let wide = ui.available_width();
     let text_x = PAD_X + RULE_W + 14.0;
@@ -166,14 +172,14 @@ fn line(
     let note_h = note.as_ref().map_or(0.0, |g| g.size().y + 10.0);
     let tall = (PAD_Y * 2.0 + quote.size().y + note_h).max(56.0);
     let (rect, r) = ui.allocate_exact_size(vec2(wide, tall), Sense::click());
-    if r.hovered() {
+    if r.hovered() || selection.selected(row.id) {
         let round = egui::CornerRadius {
             nw: if ends.0 { look::ROUND as u8 } else { 0 },
             ne: if ends.0 { look::ROUND as u8 } else { 0 },
             sw: if ends.1 { look::ROUND as u8 } else { 0 },
             se: if ends.1 { look::ROUND as u8 } else { 0 },
         };
-        ui.painter().rect_filled(rect.shrink(1.0), round, t.hover);
+        ui.painter().rect_filled(rect.shrink(1.0), round, if selection.selected(row.id) { t.accent_soft } else { t.hover });
         ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
     }
     let painter = ui.painter();
@@ -196,7 +202,9 @@ fn line(
     meta(ui, rect, row, t);
     let label = format!("Open {}", row.quote);
     r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
-    r.clicked()
+    if rect.intersect(ui.clip_rect()).is_positive() { selection.visible(row.id); }
+    selection.menu(&r, row.id, out);
+    if r.clicked() && selection.active() { selection.toggle(row.id); false } else { r.clicked() }
 }
 
 /// The mark's colour as the reader paints it; a bookmark takes the accent.

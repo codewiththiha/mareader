@@ -273,7 +273,10 @@ pub(super) fn card_size(ui: &mut Ui, columns: &mut Option<u8>, t: &Tokens) {
     let shown = columns.unwrap_or(auto);
     ui.horizontal(|ui| {
         look::quiet(ui, "Card columns", t.text_small, t);
-        if ui.add(egui::Button::selectable(columns.is_none(), "Auto")).clicked() {
+        if ui
+            .add(egui::Button::selectable(columns.is_none(), "Auto"))
+            .clicked()
+        {
             *columns = None;
         }
         if widgets::small_icon_button(ui, Icon::Minus, "Fewer vocab columns").clicked() {

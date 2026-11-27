@@ -60,7 +60,17 @@ pub(super) fn show(ui: &mut Ui, view: &View, shown: Shown<'_>, t: &Tokens, out: 
     for section in &view.sections {
         heading(ui, section, t);
         match cards {
-            true => grid(ui, &section.rows, picked, selection, scope, reveal, t, out, columns),
+            true => grid(
+                ui,
+                &section.rows,
+                picked,
+                selection,
+                scope,
+                reveal,
+                t,
+                out,
+                columns,
+            ),
             false => sheet(
                 ui,
                 &section.rows,
@@ -142,15 +152,13 @@ fn line(
     let is_open = *open == Some(row.key);
     let hit = row_hit(ui, row, vec2(ui.available_width(), 84.0));
     let frame = Frame::new()
-        .fill(
-            if selection.is_selected(row) {
-                t.accent_soft
-            } else if hit.hovered() {
-                t.hover
-            } else {
-                egui::Color32::TRANSPARENT
-            },
-        )
+        .fill(if selection.is_selected(row) {
+            t.accent_soft
+        } else if hit.hovered() {
+            t.hover
+        } else {
+            egui::Color32::TRANSPARENT
+        })
         .inner_margin(Margin::symmetric(18, 12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -236,7 +244,9 @@ fn grid(
             ui.spacing_mut().item_spacing.x = GAP;
             for row in line {
                 ui.push_id(row.key, |ui| {
-                    card(ui, row, picked, selection, scope, reveal, t, out, card_width)
+                    card(
+                        ui, row, picked, selection, scope, reveal, t, out, card_width,
+                    )
                 });
             }
         });
@@ -257,15 +267,13 @@ fn card(
 ) {
     let hit = row_hit(ui, row, vec2(card_width + CARD_EDGES, 180.0));
     let frame = Frame::new()
-        .fill(
-            if selection.is_selected(row) {
-                t.accent_soft
-            } else if hit.hovered() {
-                t.hover
-            } else {
-                t.card
-            },
-        )
+        .fill(if selection.is_selected(row) {
+            t.accent_soft
+        } else if hit.hovered() {
+            t.hover
+        } else {
+            t.card
+        })
         .stroke(Stroke::new(1.0, t.line))
         .corner_radius(look::ROUND)
         .inner_margin(Margin::same(16))

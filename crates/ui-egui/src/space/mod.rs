@@ -11,6 +11,7 @@ mod hub;
 mod locateglow;
 mod look;
 mod notes;
+mod note_selection;
 mod rail;
 mod returning;
 mod rows;
@@ -49,6 +50,7 @@ const HUB_W: f32 = 980.0;
 pub struct SpaceUi {
     pub filter: Filter,
     pub notes: NotesFilter,
+    notes_selection: note_selection::Selection,
     /// Cards in a grid instead of the list.
     pub cards: bool,
     card_columns: Option<u8>,
@@ -115,6 +117,7 @@ impl SpaceUi {
         {
             self.detail = None;
         }
+        self.notes_selection.dialog(ui.ctx(), &t, out);
         if let Some(words) = self.selection.dialog(ui.ctx(), from.lib, &t, out) {
             self.delete_ai = Some(words);
         }
@@ -281,7 +284,7 @@ impl SpaceUi {
                 .id_salt("space-notes")
                 .auto_shrink([false, false]);
             let scrolled = scroll.show(ui, |ui| {
-                notes::column(ui, (&view, filter), (from.look, narrow), t, out);
+                notes::column(ui, (&view, filter), (from.look, narrow), &mut self.notes_selection, t, out);
                 ui.add_space(MARGIN);
             });
             crate::widgets::scroll_fades(ui, &scrolled, t.paper);

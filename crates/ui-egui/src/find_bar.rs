@@ -337,7 +337,8 @@ impl FindBar {
 
     /// The query, without a box: the capsule is its frame. True on Enter.
     fn field(&mut self, ui: &mut Ui, t: &Tokens, id: Id, now: f64, found: Option<&Found>) -> bool {
-        let missing = !self.query.trim().is_empty() && self.typed.is_none()
+        let missing = !self.query.trim().is_empty()
+            && self.typed.is_none()
             && found.is_some_and(|f| f.done() && f.hits.is_empty());
         let before = self.query.clone();
         let hint = RichText::new(PLACEHOLDER).color(t.muted.gamma_multiply(0.8));
