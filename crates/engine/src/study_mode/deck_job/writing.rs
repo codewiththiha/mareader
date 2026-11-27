@@ -2,8 +2,8 @@
 //! keeps (`reuse`), then the writer's answers.
 //!
 //! The words still missing are cut into requests of the writer's size
-//! ([`request_chunks`]) and all asked at once; the model's queue runs as many as
-//! it takes and holds the rest. The deck goes on only once every request
+//! ([`request_chunks`]) and all asked at once. The model's queue runs as
+//! many as it takes and holds the rest. The deck goes on once every request
 //! has answered. A failed request fails the deck, but the backs the
 //! others wrote stay cached, so trying again asks only the words missing.
 //! Each request's backs also go to the AI dictionary as they come.
