@@ -301,7 +301,11 @@ fn saved_ai_selection_opens_and_returns_to_its_tab() -> Result<(), Box<dyn std::
     );
     h.state_mut().queue(Sent::Engine(Command::Open(other)));
     h.run_steps(30);
-    assert_ne!(h.state().session().book_in(pane), Some(book), "the source book is closed");
+    assert_ne!(
+        h.state().session().book_in(pane),
+        Some(book),
+        "the source book is closed"
+    );
     h.state_mut()
         .queue(Sent::Engine(Command::ShowSpace(Room::Notes)));
     h.run_steps(15);
@@ -310,7 +314,10 @@ fn saved_ai_selection_opens_and_returns_to_its_tab() -> Result<(), Box<dyn std::
     h.get_by_label(&source).click();
     h.run_steps(80);
     assert_eq!(h.state().route(), Route::Reader);
-    assert_eq!(h.state().session().book_in(h.state().active_pane()), Some(book));
+    assert_eq!(
+        h.state().session().book_in(h.state().active_pane()),
+        Some(book)
+    );
     let ask = h
         .state()
         .skills()
