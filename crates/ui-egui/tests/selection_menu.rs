@@ -268,7 +268,7 @@ fn arrow_keys_choose_a_language_without_searching() {
 }
 
 #[test]
-fn skill_submenus_do_not_cover_the_selection_menu() {
+fn skill_submenus_stay_beside_the_menu_when_possible() {
     for (width, text) in [
         (1000.0, "quick brown"),
         (600.0, "0123456789"),
@@ -306,15 +306,55 @@ fn skill_submenus_do_not_cover_the_selection_menu() {
                     child.right() <= parent.left(),
                     "expected left: {parent:?} {child:?}"
                 ),
-                _ => assert!(
-                    child.top() >= parent.bottom() || child.bottom() <= parent.top(),
-                    "expected vertical fallback: {parent:?} {child:?}"
-                ),
+                _ => {
+                    let trigger = h.get_by_label(row).rect();
+                    assert!(
+                        child.top() <= trigger.center().y && child.bottom() >= trigger.center().y,
+                        "submenu must be reachable horizontally: {trigger:?} {child:?}"
+                    );
+                    assert!(parent.intersects(child), "narrow screen permits overlap");
+                    let into = egui::pos2(
+                        (child.left() + 8.0).max(trigger.center().x),
+                        trigger.center().y,
+                    );
+                    h.hover_at(into);
+                    h.run_steps(30);
+                    assert!(
+                        h.query_by_label(item).is_some(),
+                        "{row} should stay open across overlap"
+                    );
+                    let overlap = child.intersect(parent);
+                    if overlap.is_positive() {
+                        for y in [
+                            overlap.top() + 4.0,
+                            overlap.center().y,
+                            overlap.bottom() - 4.0,
+                        ] {
+                            h.hover_at(egui::pos2(overlap.center().x, y));
+                            h.run_steps(30);
+                            assert!(
+                                h.query_by_label(item).is_some(),
+                                "{row} closed inside its popup"
+                            );
+                            let other = if row == "Translate" {
+                                "Quiz me"
+                            } else {
+                                "Burmese"
+                            };
+                            assert!(
+                                h.query_by_label(other).is_none(),
+                                "another submenu opened through {row}"
+                            );
+                        }
+                    }
+                }
             }
-            assert!(
-                !parent.intersects(child),
-                "{row}, width {width}: parent {parent:?}, child {child:?}"
-            );
+            if width > 320.0 {
+                assert!(
+                    !parent.intersects(child),
+                    "{row}, width {width}: parent {parent:?}, child {child:?}"
+                );
+            }
         }
     }
 }
@@ -368,4 +408,75 @@ fn common_actions_remain_nearest_the_selection_on_either_side() {
             assert!(skills.bottom() < note.top() && note.bottom() < copy.top());
         }
     }
+}
+
+#[test]
+fn notes_preview_expands_inline_and_jump_can_be_undone() -> Result<(), String> {
+    use mareader_engine::skills::Action;
+    use mareader_settings::{PageTask, Skill};
+    let mut h = reader(&[
+        ("pdf", "sample:5"),
+        ("sidebar", "notes"),
+        ("skill_answers", "echo"),
+    ]);
+    let pane = h.state().active_pane();
+    let (layer, _) = crate::common::page(&h, 0)?;
+    let source: String = layer
+        .text
+        .chars()
+        .iter()
+        .map(|c| c.ch)
+        .skip(30)
+        .take(240)
+        .collect();
+    h.state_mut().queue(Sent::Engine(Command::SelectText {
+        pane,
+        page: 0,
+        text: source,
+    }));
+    h.run_steps(10);
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Run {
+            pane,
+            skill: Skill::Builtin(PageTask::Simplify),
+        })));
+    h.run_steps(30);
+    let ask = h
+        .state()
+        .skills()
+        .asks()
+        .first()
+        .ok_or("selection did not run")?
+        .id;
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Close(ask))));
+    h.run_steps(10);
+    crate::common::go_to(&mut h, 3);
+    h.run_steps(20);
+    assert_eq!(h.state().documents().reading(pane).unwrap().current, 3);
+    let collapsed = h.get_by_label_contains("Simplify · This session").rect();
+    let more = h.get_by_label("Show more").rect();
+    assert!(
+        collapsed.contains_rect(more),
+        "link must sit in preview: {collapsed:?} {more:?}"
+    );
+    h.get_by_label("Show more").click();
+    h.run_steps(10);
+    assert_eq!(h.state().documents().reading(pane).unwrap().current, 3);
+    assert!(!h.state().skills().get(ask).unwrap().open);
+    h.get_by_label("Show less").click();
+    h.run_steps(5);
+    h.get_by_label_contains("Simplify · This session").click();
+    h.run_steps(30);
+    assert_eq!(h.state().documents().reading(pane).unwrap().current, 0);
+    assert!(h.state().skills().get(ask).unwrap().open);
+    assert!(
+        h.state()
+            .toast()
+            .is_some_and(|t| t.message.contains("page 4"))
+    );
+    h.get_by_label("Undo").click();
+    h.run_steps(30);
+    assert_eq!(h.state().documents().reading(pane).unwrap().current, 3);
+    Ok(())
 }

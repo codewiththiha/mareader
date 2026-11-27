@@ -253,7 +253,7 @@ pub fn show(
                 }
             }
             for answer in shown_ai {
-                selection::entry(ui, answer, out);
+                selection::entry(ui, answer, reading, out);
             }
             ui.add_space(12.0);
         });

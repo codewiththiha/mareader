@@ -179,7 +179,7 @@ fn popup<'a>(
     width: f32,
     parent: Option<Rect>,
 ) -> (egui::Popup<'a>, f32) {
-    let mut list_h = LIST_H;
+    let list_h = LIST_H;
     let mut popup = egui::Popup::from_response(resp)
         .id(popup_id)
         .open(open)
@@ -193,27 +193,23 @@ fn popup<'a>(
             .memory(|m| m.area_rect(popup_id))
             .map_or(width + 14.0, |r| r.width());
         let room = ctx.content_rect();
-        if room.right() - parent.right() >= width + 4.0
-            || parent.left() - room.left() >= width + 4.0
-        {
-            let anchor = Rect::from_min_max(
-                pos2(parent.left(), resp.interact_rect.top()),
-                pos2(parent.right(), resp.interact_rect.bottom()),
-            );
+        let right = room.right() - parent.right();
+        let left = parent.left() - room.left();
+        let anchor = Rect::from_min_max(
+            pos2(parent.left(), resp.interact_rect.top()),
+            pos2(parent.right(), resp.interact_rect.bottom()),
+        );
+        if right >= width + 4.0 || left >= width + 4.0 {
             popup = popup
                 .anchor(anchor)
                 .align_alternatives(&[egui::RectAlign::LEFT_START]);
         } else {
-            let space = (parent.top() - room.top()).max(room.bottom() - parent.bottom());
-            list_h = (space - 4.0 - 14.0 - FIELD_H).clamp(0.0, LIST_H);
-            popup = popup
-                .anchor(parent)
-                .align(egui::RectAlign::BOTTOM_START)
-                .align_alternatives(&[
-                    egui::RectAlign::TOP_START,
-                    egui::RectAlign::BOTTOM_END,
-                    egui::RectAlign::TOP_END,
-                ]);
+            let side = if right >= left {
+                egui::RectAlign::RIGHT_START
+            } else {
+                egui::RectAlign::LEFT_START
+            };
+            popup = popup.anchor(anchor).align(side).align_alternatives(&[]);
         }
     }
     (popup, list_h)

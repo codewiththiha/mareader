@@ -11,7 +11,8 @@ and scrolls if needed; its size is not user-resizable.
   in code (`crates/assist/src/skill.rs`); Settings only picks their model.
 - **In the menu.** The built-ins have their own rows. The reader's custom
   skills fold into one "Custom skills" row; hovered or pressed, a narrow
-  list opens beside it and scrolls, or explains that there are no skills. Typing
+  list opens beside it and scrolls, or explains that there are no skills. On
+  narrow screens it may overlap the menu to stay reachable. Typing
   while it shows finds a skill: the search field slides in on top, the
   first match lights, ↑ ↓ move the light, and Enter runs it. The first Escape clears the search and folds
   the list; the next closes the menu. The page menu folds them the same
@@ -66,8 +67,10 @@ and scrolls if needed; its size is not user-resizable.
   leaves the last successful saved answer intact.
 - **Annotations.** The Selection AI filter appears when the book has answers;
   rows show pin state and the selected text. Long passages start with a
-  180-character preview; click to expand or collapse it, or use Open answer
-  to reopen the card. Search still checks the full passage. Changed or
+  180-character preview with an inline Show more link. The link expands or
+  collapses the passage; clicking the rest of the row opens the answer and
+  offers Undo to return to the previous page. Search still checks the full
+  passage. Changed or
   missing passages cannot be opened at an unverified location.
 - **Page-menu cards** remain temporary: closing them ends their run and at
   most eight are kept.

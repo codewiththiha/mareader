@@ -79,44 +79,43 @@ pub fn show(
         prefer: Side::Above,
     };
     let parent = ctx.memory(|m| m.area_rect(id));
-    let (_, pressed) =
-        bubble.show_with_side(ctx, &t, crate::bubble::SELECTION_GAP, |ui, cap, side| {
-            let _act = anim::announce(ui, Act::Hover);
-            let height = HEIGHT.min(cap).max(0.0);
-            let height = if restricted {
-                height.min(108.0)
-            } else {
-                height
-            };
-            ui.set_height(height);
-            if height < 84.0 {
-                ScrollArea::vertical()
-                    .id_salt("selection-tiny")
-                    .max_height(height)
-                    .show(ui, |ui| {
-                        contents(
-                            ui,
-                            look,
-                            &custom,
-                            &mut pen,
-                            &t,
-                            84.0,
-                            (restricted, parent, side),
-                        )
-                    })
-                    .inner
-            } else {
-                contents(
-                    ui,
-                    look,
-                    &custom,
-                    &mut pen,
-                    &t,
-                    height,
-                    (restricted, parent, side),
-                )
-            }
-        });
+    let (_, pressed) = bubble.show_with_side(ctx, &t, crate::bubble::GAP, |ui, cap, side| {
+        let _act = anim::announce(ui, Act::Hover);
+        let height = HEIGHT.min(cap).max(0.0);
+        let height = if restricted {
+            height.min(108.0)
+        } else {
+            height
+        };
+        ui.set_height(height);
+        if height < 84.0 {
+            ScrollArea::vertical()
+                .id_salt("selection-tiny")
+                .max_height(height)
+                .show(ui, |ui| {
+                    contents(
+                        ui,
+                        look,
+                        &custom,
+                        &mut pen,
+                        &t,
+                        84.0,
+                        (restricted, parent, side),
+                    )
+                })
+                .inner
+        } else {
+            contents(
+                ui,
+                look,
+                &custom,
+                &mut pen,
+                &t,
+                height,
+                (restricted, parent, side),
+            )
+        }
+    });
     if pen != was {
         ctx.request_repaint();
     }
