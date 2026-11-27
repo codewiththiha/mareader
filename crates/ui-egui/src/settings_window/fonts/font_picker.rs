@@ -126,3 +126,29 @@ fn installed(ui: &Ui) -> Arc<[SystemFont]> {
     ui.data_mut(|d| d.insert_temp(id, Arc::clone(&found)));
     found
 }
+
+#[cfg(test)]
+mod tests {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable as _;
+    use mareader_settings::FontChoice;
+
+    #[test]
+    fn typing_and_enter_picks_a_bundled_font() {
+        let face = &mareader_session::FACES[0];
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(600.0, 500.0))
+            .build_ui_state(
+                |ui, choice| super::picker(ui, "Body font", "", choice, None),
+                FontChoice::Default,
+            );
+        h.run();
+        h.get_by_role(egui::accesskit::Role::ComboBox).click();
+        h.run();
+        h.event(egui::Event::Text(face.name.into()));
+        h.run();
+        h.key_press(egui::Key::Enter);
+        h.run();
+        assert_eq!(*h.state(), FontChoice::Bundled(face.id.to_owned()));
+    }
+}
