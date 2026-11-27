@@ -141,7 +141,7 @@ fn card(ui: &mut Ui, ask: &Ask, cap: f32, t: &Tokens, out: &mut Commands) {
 /// The skill's name, and the button that closes the card.
 fn header(ui: &mut Ui, ask: &Ask, t: &Tokens, out: &mut Commands) {
     word_card::footer_frame(ui, |ui| {
-        ui.horizontal_centered(|ui| {
+        ui.horizontal(|ui| {
             let controls = if matches!(ask.anchor, Anchor::Text(_)) {
                 3.0
             } else {
@@ -152,7 +152,14 @@ fn header(ui: &mut Ui, ask: &Ask, t: &Tokens, out: &mut Commands) {
             let name = RichText::new(&ask.name)
                 .font(theme::medium(t.text + 2.0))
                 .color(t.ink);
-            ui.add_sized(vec2(width, t.control), egui::Label::new(name).truncate());
+            ui.allocate_ui_with_layout(
+                vec2(width, t.control),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.set_width(width);
+                    ui.add(egui::Label::new(name).truncate());
+                },
+            );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let close = widgets::icon_button(ui, Icon::Close, "Close", false);
                 if close.clicked() {
