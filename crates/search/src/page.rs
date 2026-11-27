@@ -94,28 +94,18 @@ impl Page {
     pub fn find(&self, needle: &Needle) -> Vec<Range<usize>> {
         let chars = Chars::new(&self.folded);
         let n = needle.chars;
-        let mut hits: Vec<Range<usize>> = (self.folded.match_indices(&needle.folded))
-            .map(|(b, _)| chars.at(b))
+        let mut hits: Vec<Range<usize>> = self.folded.char_indices()
+            .filter(|(byte, _)| self.folded.get(*byte..).is_some_and(|tail| tail.starts_with(&needle.folded)))
+            .map(|(byte, _)| chars.at(byte))
             .map(|c| c..c + n)
             .collect();
         if !self.soft.is_empty() {
             self.across_lines(needle, &mut hits);
-            hits.sort_unstable_by_key(|h| (h.start, h.end));
-            let mut end = 0;
-            hits.retain(|h| {
-                let keep = h.start >= end;
-                end = if keep { h.end } else { end };
-                keep
-            });
         }
         if let Some(case) = &needle.case {
             hits.retain(|range| {
-                let actual = self
-                    .shown
-                    .chars()
-                    .enumerate()
-                    .skip(range.start)
-                    .take(range.end - range.start)
+                let actual = self.shown.chars().enumerate()
+                    .skip(range.start).take(range.end - range.start)
                     .filter(|(at, _)| !self.soft.iter().any(|(soft, _)| *soft as usize == *at))
                     .map(|(_, c)| c);
                 actual.zip(case.chars()).all(|(a, b)| {
@@ -123,6 +113,13 @@ impl Page {
                 })
             });
         }
+        hits.sort_unstable_by_key(|h| (h.start, h.end));
+        let mut end = 0;
+        hits.retain(|h| {
+            let keep = h.start >= end;
+            end = if keep { h.end } else { end };
+            keep
+        });
         hits
     }
 
@@ -359,6 +356,8 @@ mod tests {
         let needle = Needle::with_case("International", true).unwrap();
         assert_eq!(p.find(&needle).len(), 1);
         assert_eq!(p.find(&Needle::new("fox").unwrap()).len(), 3);
+        let overlap = page(&["aAa"]);
+        assert_eq!(overlap.find(&Needle::with_case("Aa", true).unwrap()).len(), 1);
     }
 
     fn found(p: &Page, q: &str) -> Vec<String> {

@@ -205,3 +205,46 @@ fn ai_dictionary_deletion_requires_opt_in() {
         assert_eq!(!found.saved.is_empty(), !opt_in);
     }
 }
+
+#[test]
+fn return_rises_above_an_expanding_ai_stack() -> Out {
+    use mareader_engine::page_ai::{Action as PageAi, How};
+    use mareader_settings::PageTask;
+    use mareader_ui_egui::activity::stack::STACK;
+
+    let raven = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../epub/tests/books/the-raven-gutenberg-17192.epub")
+        .canonicalize()?;
+    let mut h = reader(&[
+        ("epub", raven.to_str().ok_or("UTF-8 path")?),
+        ("provider", "ollama"),
+        ("page_ai_hold", "true"),
+    ]);
+    act(&mut h, Action::SeedWords);
+    h.state_mut().queue(Sent::Engine(Command::ShowSpace(Room::Words)));
+    h.run_steps(3);
+    right_click(&mut h, "Details for lintel");
+    h.get_by_label("Go to word in book").click();
+    h.run_steps(30);
+    let pane = h.state().active_pane();
+    for page in [1, 2] {
+        h.state_mut().queue(Sent::Engine(Command::PageAi(PageAi::Run {
+            pane,
+            page,
+            task: PageTask::Simplify,
+            how: How::default(),
+        })));
+        h.run_steps(20);
+    }
+    let stack = h.get_by_label(STACK).rect();
+    let back = h.get_by_label("Go back to vocabs").rect();
+    assert!(back.bottom() <= stack.top(), "folded: {back:?}, {stack:?}");
+    h.hover_at(stack.center());
+    for _ in 0..25 {
+        h.run_steps(1);
+        let stack = h.get_by_label(STACK).rect();
+        let back = h.get_by_label("Go back to vocabs").rect();
+        assert!(back.bottom() <= stack.top(), "expanding: {back:?}, {stack:?}");
+    }
+    Ok(())
+}
