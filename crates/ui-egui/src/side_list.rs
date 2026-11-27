@@ -104,11 +104,115 @@ pub fn show_beside<T: Clone>(
     row: impl FnOnce(&mut Ui) -> Response,
     cell: impl FnMut(&mut Ui, &T, &str) -> bool,
 ) -> Shown<T> {
+    show_beside_with(ui, spec, parent, row, None, cell)
+}
+
+/// A side list with an optional persistent control above its choices.
+/// The control stays keyboard-accessible alongside the search field. An empty
+/// search label makes the popup just the control, without a search field.
+pub fn show_beside_with<T: Clone>(
+    ui: &mut Ui,
+    spec: Spec<'_, T>,
+    parent: Option<Rect>,
+    row: impl FnOnce(&mut Ui) -> Response,
+    mut header: Option<&mut dyn FnMut(&mut Ui) -> Response>,
+    cell: impl FnMut(&mut Ui, &T, &str) -> bool,
+) -> Shown<T> {
     let ctx = ui.ctx().clone();
     let (now, pass) = (ui.input(|i| i.time), ctx.cumulative_pass_nr());
     let under = ui.painter().add(Shape::Noop);
     let resp = row(ui);
     let id = resp.id.with("side-list");
+    let (mut state, open) = trigger(ui, &resp, id, now, pass);
+    let mut picked = None;
+    let (popup, list_h) = popup(&resp, id.with("list"), open, spec.width, parent);
+    let shown = popup.show(|ui| {
+        crate::z_order::register_popup(ui.ctx(), ui.layer_id());
+        widgets::menu_style(ui, spec.width);
+        let control = header.as_mut().map(|draw| draw(ui));
+        let in_header = control.as_ref().is_some_and(|control| {
+            header_focus(
+                ui,
+                control,
+                id.with("find"),
+                spec.find.is_empty(),
+                resp.has_focus(),
+            )
+        });
+        if !spec.find.is_empty() {
+            picked = contents(
+                ui,
+                (&spec, id),
+                &mut state,
+                list_h,
+                !in_header,
+                &|_| true,
+                cell,
+            );
+        }
+        ui.layer_id()
+    });
+    let (pos, pressed) = ui.input(|i| (i.pointer.interact_pos(), i.pointer.any_pressed()));
+    let inside = shown.as_ref().is_some_and(|s| {
+        s.response.contains_pointer() || pos.is_some_and(|p| s.response.rect.contains(p))
+    });
+    if inside {
+        state.over = Some(now);
+    }
+    let away = pressed && !inside && !resp.contains_pointer();
+    if picked.is_some() || away {
+        state = State {
+            pass,
+            ..State::default()
+        };
+    }
+    linger(ui, &state, now);
+    if let Some(s) = shown.filter(|_| open) {
+        mark_open(
+            ui,
+            &resp,
+            spec.corners,
+            under,
+            Held {
+                pass,
+                layer: s.inner,
+            },
+        );
+    }
+    ui.data_mut(|d| d.insert_temp(id, state));
+    Shown { row: resp, picked }
+}
+
+/// Tab moves between the embedded control and search without being stolen.
+fn header_focus(
+    ui: &Ui,
+    control: &Response,
+    search: Id,
+    no_search: bool,
+    trigger_focus: bool,
+) -> bool {
+    if no_search && trigger_focus {
+        control.request_focus();
+    }
+    let in_control = ui.memory(|m| m.has_focus(control.id));
+    let in_search = ui.memory(|m| m.has_focus(search));
+    if !no_search && (in_control || in_search) {
+        let tab = ui.input_mut(|i| {
+            i.consume_key(Modifiers::NONE, Key::Tab) || i.consume_key(Modifiers::SHIFT, Key::Tab)
+        });
+        if tab {
+            if in_control {
+                ui.memory_mut(|m| m.request_focus(search));
+            } else {
+                control.request_focus();
+            }
+        }
+    }
+    ui.memory(|m| m.has_focus(control.id))
+}
+
+/// Tracks hover, keyboard opening and Escape for a submenu trigger.
+fn trigger(ui: &Ui, resp: &Response, id: Id, now: f64, pass: u64) -> (State, bool) {
     let mut state: State = ui.data_mut(|d| d.get_temp(id)).unwrap_or_default();
     if state.pass == 0 || state.pass + 1 < pass {
         state = State::default();
@@ -137,38 +241,23 @@ pub fn show_beside<T: Clone>(
         };
         open = false;
     }
-    let mut picked = None;
-    let (popup, list_h) = popup(&resp, id.with("list"), open, spec.width, parent);
-    let shown = popup.show(|ui| {
-        picked = contents(ui, (&spec, id), &mut state, list_h, true, &|_| true, cell);
-        ui.layer_id()
-    });
-    let (pos, pressed) = ui.input(|i| (i.pointer.interact_pos(), i.pointer.any_pressed()));
-    let inside = shown.as_ref().is_some_and(|s| {
-        s.response.contains_pointer() || pos.is_some_and(|p| s.response.rect.contains(p))
-    });
-    if inside {
-        state.over = Some(now);
+    (state, open)
+}
+
+/// Keep Escape in the open list and light its parent row.
+fn mark_open(
+    ui: &Ui,
+    resp: &Response,
+    corners: CornerRadius,
+    under: egui::layers::ShapeIdx,
+    held: Held,
+) {
+    ui.ctx().data_mut(|d| d.insert_temp(held_id(), held));
+    if !resp.hovered() {
+        let t = Tokens::get(ui.ctx());
+        let lit = Shape::rect_filled(resp.rect, corners, t.selected);
+        ui.painter().set(under, lit);
     }
-    let away = pressed && !inside && !resp.contains_pointer();
-    if picked.is_some() || away {
-        state = State {
-            pass,
-            ..State::default()
-        };
-    }
-    linger(ui, &state, now);
-    if let Some(s) = shown.filter(|_| open) {
-        let layer = s.inner;
-        ctx.data_mut(|d| d.insert_temp(held_id(), Held { pass, layer }));
-        if !resp.hovered() {
-            let t = Tokens::get(&ctx);
-            let lit = Shape::rect_filled(resp.rect, spec.corners, t.selected);
-            ui.painter().set(under, lit);
-        }
-    }
-    ui.data_mut(|d| d.insert_temp(id, state));
-    Shown { row: resp, picked }
 }
 
 /// Keeps a selection list outside its enclosing card when space allows.

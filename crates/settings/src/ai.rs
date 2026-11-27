@@ -268,7 +268,7 @@ pub struct SummarizeTask {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PageStart {
-    /// Offers This page and Continuous.
+    /// A legacy setting; page actions now treat it as a single page.
     #[default]
     Ask,
     Page,

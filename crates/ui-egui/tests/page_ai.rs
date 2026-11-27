@@ -170,13 +170,19 @@ fn the_wheel_over_a_result_scrolls_the_book_not_the_result() -> Out {
 fn simplify_on(h: &mut H, _remember: bool) -> Result<(), String> {
     let (_, sheet) = page(h, 0)?;
     press(h, margin(sheet), PointerButton::Secondary);
-    h.get_by_label("Simplify continuously").click();
+    h.get_by_label("Simplify page").hover();
+    h.run();
+    if h.state().settings().ai.tasks.simplify.start != PageStart::Continuous {
+        h.get_by_label("Simplify continuously").click();
+        h.run();
+    }
+    h.get_by_label("Simplify page").click();
     h.run_steps(3);
     Ok(())
 }
 
 #[test]
-fn simplify_continuous_is_a_separate_action() -> Out {
+fn simplify_continuous_is_a_persisted_mode() -> Out {
     let mut h = reader(&[("pdf", "sample:40"), ("provider", "ollama")]);
     let pane = h.state().active_pane();
     simplify_on(&mut h, true)?;
@@ -185,7 +191,7 @@ fn simplify_continuous_is_a_separate_action() -> Out {
 }
 
 #[test]
-fn normal_simplify_ignores_the_old_continuous_preference() -> Out {
+fn normal_simplify_uses_the_continuous_preference() -> Out {
     let mut h = reader(&[("pdf", "sample:40"), ("provider", "ollama")]);
     let pane = h.state().active_pane();
     let mut settings = h.state().settings().clone();
@@ -198,11 +204,7 @@ fn normal_simplify_ignores_the_old_continuous_preference() -> Out {
     h.get_by_label("Simplify page").click();
     h.run_steps(3);
     assert!(h.query_by_label("Continuous").is_none(), "no second step");
-    assert!(h.state().page_ai().ledger.following(pane).is_none());
-    assert!(
-        h.state().page_ai().shows(pane, 0),
-        "the page is being written"
-    );
+    assert!(h.state().page_ai().ledger.following(pane).is_some());
     Ok(())
 }
 

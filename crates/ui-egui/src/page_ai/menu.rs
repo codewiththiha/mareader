@@ -21,6 +21,7 @@ use mareader_settings::{AiSettings, PageTask};
 use mareader_workspace::PaneId;
 
 /// The language search field, for screen readers and tests.
+mod continuous;
 mod rows;
 use rows::aloud_row;
 pub use rows::offer_accent;
@@ -275,34 +276,32 @@ impl PageAiUi {
             .as_deref()
             .and_then(mareader_settings::language_name);
         let to = format!("Translate {what}…");
-        let shown = crate::language_menu::show_beside_action(ui, &choices, self.menu_rect, |ui| {
-            widgets::menu_row_chevron(ui, Icon::Translate, &to, current)
-        });
+        let mut translate = ai.tasks.translate.start == mareader_settings::PageStart::Continuous;
+        let shown = continuous::translate(
+            ui,
+            &choices,
+            self.menu_rect,
+            (&to, current),
+            group,
+            &mut translate,
+            out,
+        );
         if let Some(tag) = shown.picked {
-            return Self::ask(m, PageTask::Translate, Some(tag), true, false, out);
+            return Self::ask(m, PageTask::Translate, Some(tag), true, translate, out);
         }
         if shown.row.clicked()
             && let Some(tag) = choices.current.clone()
         {
-            return Self::ask(m, PageTask::Translate, Some(tag), false, false, out);
+            return Self::ask(m, PageTask::Translate, Some(tag), false, translate, out);
         }
         let label = format!("Simplify {what}");
-        if widgets::menu_row(ui, Icon::Simplify, &label, None, false)
-            .on_hover_text("Rewrites the text in plain English")
-            .clicked()
-        {
-            return Self::ask(m, PageTask::Simplify, None, false, false, out);
+        let mut simplify = ai.tasks.simplify.start == mareader_settings::PageStart::Continuous;
+        let row = continuous::simplify(ui, self.menu_rect, &label, group, &mut simplify, out);
+        if row.clicked() {
+            return Self::ask(m, PageTask::Simplify, None, false, simplify, out);
         }
         if group {
             return false;
-        }
-        if widgets::menu_row(ui, Icon::Repeat, "Translate continuously", current, false).clicked()
-            && let Some(tag) = choices.current
-        {
-            return Self::ask(m, PageTask::Translate, Some(tag), false, true, out);
-        }
-        if widgets::menu_row(ui, Icon::Repeat, "Simplify continuously", None, false).clicked() {
-            return Self::ask(m, PageTask::Simplify, None, false, true, out);
         }
         if rows::custom(ui, m, ai, out) {
             return true;
@@ -382,7 +381,14 @@ impl PageAiUi {
         let Some(tag) = picked else {
             return false;
         };
-        Self::ask(m, PageTask::Translate, Some(tag), true, false, out)
+        Self::ask(
+            m,
+            PageTask::Translate,
+            Some(tag),
+            true,
+            _ai.tasks.translate.start == mareader_settings::PageStart::Continuous,
+            out,
+        )
     }
 
     fn bubble_menu(

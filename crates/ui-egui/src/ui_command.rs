@@ -106,6 +106,8 @@ pub enum UiCommand {
     Notify(Toast),
     /// Opens the rail on a panel, or on the last one shown.
     OpenSidebar(Option<Panel>),
+    /// Sets a page task's continuous default without starting a run.
+    PageContinuous(mareader_settings::PageTask, bool),
     /// Opens the Appearance popover (the keymap's route to it).
     ShowAppearance,
     /// The Dictionary page, or back to where it was opened from.
@@ -171,7 +173,8 @@ fn chrome_reads(ui: &UiCommand) -> bool {
         | U::FindStep { .. }
         | U::WordCardMode(_)
         | U::WordCardSwapLang
-        | U::WordCardTryLang(_) => true,
+        | U::WordCardTryLang(_)
+        | U::PageContinuous(_, _) => true,
         // Settings, menus and pages open over any page.
         U::ShowSettings
         | U::ShowShortcuts

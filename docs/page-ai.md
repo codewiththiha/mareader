@@ -17,9 +17,11 @@ no parity entry.
   come first. Until a language is picked, the target follows a downloaded
   dictionary default; otherwise it falls back to English. A manual pick is
   remembered, with the last five.
-- **This page or continuous.** Translate and Simplify run the current page
-  directly. Separate "Translate continuously" and "Simplify continuously"
-  actions carry on as the reader reads.
+- **This page or continuous.** Hover Translate or Simplify to find its
+  Continuous switch. The switches are independent and remembered; off starts
+  one page, on carries on as the reader reads. Clicking the parent starts
+  immediately in that mode, and picking a translation language starts in the
+  same mode. For selected page groups, actions stay within the picked pages.
 - **Already running.** The same task on the same text just shows the run
   under way; it is not asked twice.
 
@@ -233,8 +235,8 @@ the AI Dictionary's until picked.
 - `crates/ui-egui/tests/page_ai.rs`, headless, through the real menus. Without
   a model the menu offers setting one up; with one, the three tasks. A
   picked language is remembered. Marks keep their own menu. A kept result
-  covers the page until the original is asked for. Direct actions run one
-  page, and separate actions start continuous mode. The AI
+  covers the page until the original is asked for. The submenu switches set
+  the mode for direct actions and language picks. The AI
   stack stops a run. Going far away pauses, then its line's Continue
   carries on there. A
   five-second stay asks exactly "pages at once" pages ahead. A book lays a

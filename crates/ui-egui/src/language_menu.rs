@@ -99,6 +99,17 @@ pub fn show_beside_action(
     parent: Option<Rect>,
     row: impl FnOnce(&mut Ui) -> Response,
 ) -> Shown<String> {
+    show_beside_with(ui, choices, parent, row, None)
+}
+
+/// A page language list may put its continuous switch above the choices.
+pub fn show_beside_with(
+    ui: &mut Ui,
+    choices: &Choices,
+    parent: Option<Rect>,
+    row: impl FnOnce(&mut Ui) -> Response,
+    header: Option<&mut dyn FnMut(&mut Ui) -> Response>,
+) -> Shown<String> {
     let spec = Spec {
         items: &choices.items,
         find: FIND,
@@ -106,7 +117,7 @@ pub fn show_beside_action(
         width: 196.0,
         corners: CornerRadius::same(8),
     };
-    side_list::show_beside(ui, spec, parent, row, |ui, tag, name| {
+    side_list::show_beside_with(ui, spec, parent, row, header, |ui, tag, name| {
         widgets::menu_check_row(ui, name, choices.current.as_ref() == Some(tag)).clicked()
     })
 }

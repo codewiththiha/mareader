@@ -284,6 +284,20 @@ impl MareaderApp {
                 }
             }
             UiCommand::EditAi(saved) => self.ui.dict.edit_ai(*saved),
+            UiCommand::PageContinuous(task, on) => {
+                let mut tasks = self.settings().ai.tasks.clone();
+                let start = if on {
+                    mareader_settings::PageStart::Continuous
+                } else {
+                    mareader_settings::PageStart::Page
+                };
+                match task {
+                    mareader_settings::PageTask::Translate => tasks.translate.start = start,
+                    mareader_settings::PageTask::Simplify => tasks.simplify.start = start,
+                    mareader_settings::PageTask::Summarize => return,
+                }
+                let _ = self.set_field("ai.tasks", tasks);
+            }
             UiCommand::WordCardTryLang(lang) => {
                 if let Some(query) = self.ui.dict.try_lang_query(&lang) {
                     let ticket = self.session.dict_ask(query);
