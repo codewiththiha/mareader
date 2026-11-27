@@ -24,6 +24,7 @@ fn word(lemma: &str, status: WordStatus) -> NewWord {
         status,
         tries: 0,
         first_try: false,
+        ..NewWord::default()
     }
 }
 
@@ -190,4 +191,62 @@ fn who_wrote_a_meaning_is_kept_and_older_rows_say_nothing() {
     row.as_object_mut().unwrap().remove("meaning_by");
     let older: crate::WordSighting = serde_json::from_value(row).unwrap();
     assert_eq!(older.meaning_by.value, None);
+}
+
+#[test]
+fn recall_history_survives_save_and_concurrent_merges() {
+    use crate::RecallAnswer;
+    let dir = tempfile::tempdir().unwrap();
+    let folder = Folder::new(dir.path());
+    let mut a = folder.load(A).library;
+    let mut b = Library::new(B);
+    let one = book(&mut a, "/a.epub", 1);
+    book(&mut b, "/a.epub", 1);
+    let answered = |text: &str| NewWord {
+        by: LearnedBy::Reactive,
+        answers: vec![RecallAnswer {
+            text: text.into(),
+            verdict: "Wrong".into(),
+            feedback: "Try again".into(),
+        }],
+        ..word("lintel", WordStatus::Learning)
+    };
+    a.record_word(one, answered("beam"), 2_000);
+    a.record_word(one, answered("door"), 2_100);
+    b.record_word(one, answered("frame"), 2_050);
+    let seen = |lib: &Library| lib.sightings(one).into_iter().next().cloned().unwrap();
+    let (left, right) = (seen(&a), seen(&b));
+    let (mut ab, mut ba) = (left.clone(), right.clone());
+    ab.merge(right);
+    ba.merge(left);
+    assert_eq!(ab, ba);
+    assert_eq!(ab.recall_history.sessions.len(), 3);
+    save(&folder, &mut a);
+    let loaded = folder.load(A).library;
+    assert_eq!(seen(&loaded).recall_history.sessions.len(), 2);
+    let mut old = serde_json::to_value(seen(&loaded)).unwrap();
+    for key in ["recall_history", "synonyms", "usages"] {
+        old.as_object_mut().unwrap().remove(key);
+    }
+    let older: crate::WordSighting = serde_json::from_value(old).unwrap();
+    assert!(older.recall_history.sessions.is_empty());
+}
+
+#[test]
+fn erasing_a_book_tombstones_recall_text_on_sync() {
+    use crate::RecallAnswer;
+    let mut lib = Library::new(A);
+    let one = book(&mut lib, "/a.epub", 1);
+    let new = NewWord {
+        by: LearnedBy::Reactive,
+        answers: vec![RecallAnswer { text: "my answer".into(), ..Default::default() }],
+        ..word("lintel", WordStatus::Learning)
+    };
+    lib.record_word(one, new, 2_000);
+    let before = lib.sightings(one).into_iter().next().cloned().unwrap();
+    lib.remove_books(&[one], Data::Delete, 3_000);
+    let after = lib.sightings.values().next().cloned().unwrap();
+    let mut combined = before;
+    combined.merge(after);
+    assert!(combined.recall_history.sessions.is_empty());
 }

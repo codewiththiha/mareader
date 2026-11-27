@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use mareader_cefr::Ticket as TagTicket;
 use mareader_dict::Ticket as ClassTicket;
+use mareader_library::RecallAnswer;
 use mareader_settings::{TaskId, no_model};
 use mareader_study::mode::{
     Attempt, CardJob, Classes, Done, Judge, JudgeJob, Key, Outcome, Phase, Pos, Recall, Wanted,
@@ -69,6 +70,8 @@ pub struct Recalling {
     pub recall: Recall,
     /// The last answer sent, kept when the judge fails.
     pub answer: String,
+    /// Judged answers in this recall, in the order sent.
+    pub answers: Vec<RecallAnswer>,
     /// Why the judge failed, while the popover says so.
     pub failure: Option<String>,
     /// The word's back once written; none while it is, or when it can't be.
@@ -94,6 +97,7 @@ impl Recalling {
             word,
             recall: Recall::default(),
             answer: String::new(),
+            answers: Vec::new(),
             failure: None,
             back: None,
             by,
@@ -156,7 +160,19 @@ impl Recalling {
         };
         self.judging = None;
         match judged {
-            Ok(j) => (true, self.recall.judged(j.verdict, j.feedback, ask)),
+            Ok(j) => {
+                let verdict = match j.verdict {
+                    mareader_study::mode::Verdict::Correct => "Correct",
+                    mareader_study::mode::Verdict::Close => "Close",
+                    mareader_study::mode::Verdict::Wrong => "Wrong",
+                };
+                self.answers.push(RecallAnswer {
+                    text: self.answer.clone(),
+                    verdict: verdict.to_owned(),
+                    feedback: j.feedback.clone(),
+                });
+                (true, self.recall.judged(j.verdict, j.feedback, ask))
+            }
             Err(failure) => {
                 self.recall.failed();
                 self.failure = Some(failure.said());
@@ -250,6 +266,8 @@ mod tests {
         assert!(r.send("slow", Some(Arc::clone(&judge))));
         assert_eq!(r.step(true, Some(&ready)), (true, None));
         assert_eq!(r.recall.verdict, Some(Verdict::Wrong));
+        assert_eq!(r.answers.len(), 1);
+        assert_eq!(r.answers[0].text, "slow");
         assert_eq!(
             r.hint().as_deref(),
             Some("Hint: a synonym starts with “s”.")
@@ -296,6 +314,7 @@ mod tests {
         assert!(r.send(" right ", Some(judge)));
         r.step(false, None);
         assert_eq!((r.recall.phase, r.recall.attempts), (Phase::Failed, 0));
+        assert!(r.answers.is_empty());
         assert_eq!(r.answer, "right");
         assert!(
             r.failure

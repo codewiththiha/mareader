@@ -230,6 +230,11 @@ fn keep(model: &mut Library, book: BookId, recalling: &Recalling, done: Done) {
         status,
         tries: done.attempts,
         first_try: done.first_try,
+        answers: recalling.answers.clone(),
+        synonyms: recalling.back.as_ref().map_or_else(Vec::new, |b| b.synonyms.clone()),
+        usages: recalling.back.as_ref().map_or_else(Vec::new, |b| {
+            if b.usage.is_empty() { Vec::new() } else { vec![b.usage.clone()] }
+        }),
     };
     model.record_word(book, new, wall_ms());
 }

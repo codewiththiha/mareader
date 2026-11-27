@@ -1,5 +1,9 @@
 //! Words studied: where each stands for the reader, and where it was met.
 
+mod history;
+
+pub use history::{RecallAnswer, RecallHistory, RecallSession};
+
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -77,6 +81,12 @@ pub struct WordSighting {
     /// Answers given the last time it was asked; 0 for a card.
     pub tries: Field<u8>,
     pub first_try: Field<bool>,
+    #[serde(default, skip_serializing_if = "RecallHistory::is_empty")]
+    pub recall_history: RecallHistory,
+    #[serde(default)]
+    pub synonyms: Field<Vec<String>>,
+    #[serde(default)]
+    pub usages: Field<Vec<String>>,
     pub added: u64,
     /// When it was last met, in wall milliseconds.
     pub seen: Field<u64>,
@@ -99,6 +109,9 @@ pub struct NewWord {
     pub status: WordStatus,
     pub tries: u8,
     pub first_try: bool,
+    pub answers: Vec<RecallAnswer>,
+    pub synonyms: Vec<String>,
+    pub usages: Vec<String>,
 }
 
 impl WordId {
@@ -234,6 +247,13 @@ impl Library {
                 meaning_by: Field::new(new.meaning_by, at),
                 tries: Field::new(new.tries, at),
                 first_try: Field::new(new.first_try, at),
+                recall_history: {
+                    let mut history = RecallHistory::default();
+                    history.add(at, wall_ms, new.answers);
+                    history
+                },
+                synonyms: Field::new(new.synonyms, at),
+                usages: Field::new(new.usages, at),
                 added: wall_ms,
                 seen: Field::new(wall_ms, at),
                 alive: Field::new(true, at),
@@ -250,6 +270,13 @@ impl Library {
             put(&mut seen.meaning, new.meaning, at);
             put(&mut seen.meaning_by, new.meaning_by, at);
         }
+        if !new.synonyms.is_empty() {
+            put(&mut seen.synonyms, new.synonyms, at);
+        }
+        if !new.usages.is_empty() {
+            put(&mut seen.usages, new.usages, at);
+        }
+        seen.recall_history.add(at, wall_ms, new.answers);
         put(&mut seen.by, new.by, at);
         put(&mut seen.tries, new.tries, at);
         put(&mut seen.first_try, new.first_try, at);
@@ -338,6 +365,9 @@ impl Library {
             seen.context = Field::new(String::new(), at);
             seen.meaning = Field::new(String::new(), at);
             seen.meaning_by = Field::new(None, at);
+            seen.synonyms = Field::new(Vec::new(), at);
+            seen.usages = Field::new(Vec::new(), at);
+            seen.recall_history.clear(at);
         }
     }
 }
@@ -368,6 +398,9 @@ impl Merge for WordSighting {
         self.meaning_by.merge(other.meaning_by);
         self.tries.merge(other.tries);
         self.first_try.merge(other.first_try);
+        self.recall_history.merge(other.recall_history);
+        self.synonyms.merge(other.synonyms);
+        self.usages.merge(other.usages);
         self.seen.merge(other.seen);
         self.alive.merge(other.alive);
         self.extra.merge(other.extra);
@@ -383,11 +416,13 @@ impl Merge for WordSighting {
             self.meaning_by.at,
             self.tries.at,
             self.first_try.at,
+            self.synonyms.at,
+            self.usages.at,
             self.seen.at,
             self.alive.at,
         ];
         let fields = fields.map(Some);
-        newest(fields.into_iter().chain([self.extra.latest()]))
+        newest(fields.into_iter().chain([self.extra.latest(), self.recall_history.latest()]))
     }
 }
 

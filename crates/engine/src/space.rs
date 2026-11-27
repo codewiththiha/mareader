@@ -13,7 +13,7 @@ mod seed;
 mod seed_marks;
 mod tally;
 
-use mareader_library::{BookId, Format, LearnedBy, MeaningBy, WordId, WordStatus};
+use mareader_library::{BookId, Format, LearnedBy, MeaningBy, RecallAnswer, WordId, WordStatus};
 
 pub use csv::{CSV_NAME, csv};
 pub use notes::{Kept, NoteGroup, NoteRow, NotesFilter, NotesView, notes};
@@ -196,6 +196,17 @@ pub struct Row {
     pub tries: u32,
     pub by: LearnedBy,
     pub first_try: bool,
+    pub synonyms: Vec<String>,
+    pub usages: Vec<String>,
+    pub history: Vec<History>,
+}
+
+/// One recall session in a book.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct History {
+    pub book: String,
+    pub when: u64,
+    pub answers: Vec<RecallAnswer>,
 }
 
 /// A sentence's book, and the words around the word to find it by.

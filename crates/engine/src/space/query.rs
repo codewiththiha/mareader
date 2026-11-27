@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use mareader_library::{BookId, LearnedBy, Library, WordSighting, WordState, WordStatus};
 
-use super::{BANDS, Counts, Filter, Group, MetAt, Row, Scope, Section, Shelf, Sort, Stats, View};
+use super::{BANDS, Counts, Filter, Group, History, MetAt, Row, Scope, Section, Shelf, Sort, Stats, View};
 use crate::export::civil;
 
 const DAY_MS: u64 = 86_400_000;
@@ -134,7 +134,35 @@ fn row(key: u128, mets: &[&Met<'_>]) -> Option<Row> {
         tries: mets.iter().map(|m| u32::from(m.seen.tries.value)).sum(),
         by: head.seen.by.value,
         first_try: mets.iter().any(|m| m.seen.first_try.value),
+        synonyms: unique(mets.iter().flat_map(|m| m.seen.synonyms.value.iter())),
+        usages: unique(mets.iter().flat_map(|m| m.seen.usages.value.iter())),
+        history: history(mets),
     })
+}
+
+fn unique<'a>(items: impl Iterator<Item = &'a String>) -> Vec<String> {
+    let mut out = Vec::new();
+    for item in items {
+        if !item.trim().is_empty() && !out.contains(item) {
+            out.push(item.clone());
+        }
+    }
+    out
+}
+
+fn history(mets: &[&Met<'_>]) -> Vec<History> {
+    let mut out = Vec::new();
+    for met in mets {
+        for run in met.seen.recall_history.sessions.values() {
+            out.push(History {
+                book: met.title.to_owned(),
+                when: run.when,
+                answers: run.answers.clone(),
+            });
+        }
+    }
+    out.sort_by_key(|run| Reverse(run.when));
+    out
 }
 
 /// Up to [`QUOTE_WORDS`] of `sentence`'s words around `form`, else its

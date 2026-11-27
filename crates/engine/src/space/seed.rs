@@ -102,6 +102,7 @@ pub(crate) fn seed(model: &mut Library, now_ms: u64) -> usize {
                 .unwrap_or_default(),
             tries: if recalled { 1 + (i % 3) as u8 } else { 0 },
             first_try: recalled && i.is_multiple_of(3),
+            ..NewWord::default()
         };
         let at = now_ms.saturating_sub(i as u64 * 9 * DAY_MS);
         let nth = |n: usize| books.get(n % books.len().max(1)).copied();
