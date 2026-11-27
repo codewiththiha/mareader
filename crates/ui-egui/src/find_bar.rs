@@ -1,11 +1,11 @@
 //! The floating find bar: a capsule for the query, and its results card.
 
-use std::ops::Range;
+mod snippet;
 
-use egui::text::{LayoutJob, TextWrapping};
+use snippet::snippet;
 use egui::{
     Align, Context, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, Rect, Response, RichText,
-    Sense, Stroke, StrokeKind, TextEdit, TextFormat, Ui, UiBuilder, pos2, vec2,
+    Sense, Stroke, StrokeKind, TextEdit, Ui, UiBuilder, pos2, vec2,
 };
 use mareader_search::{Hit, from_page, step};
 use mareader_workspace::PaneId;
@@ -291,25 +291,7 @@ impl FindBar {
                         self.list = !self.list;
                         self.reveal = self.list;
                     }
-                    let case = egui::Button::new(
-                        RichText::new("Aa").strong().color(if self.case_sensitive {
-                            t.accent
-                        } else {
-                            t.ink
-                        }),
-                    )
-                    .selected(self.case_sensitive)
-                    .min_size(vec2(KNOB, KNOB));
-                    let case = ui.add(case);
-                    case.widget_info(|| {
-                        egui::WidgetInfo::selected(
-                            egui::WidgetType::Button,
-                            true,
-                            self.case_sensitive,
-                            "Match case",
-                        )
-                    });
-                    if case.on_hover_text("Match case").clicked() {
+                    if case_button(ui, t, self.case_sensitive) {
                         self.case_sensitive = !self.case_sensitive;
                         self.active = None;
                         self.seek = None;
@@ -494,6 +476,16 @@ enum Tone {
     None,
 }
 
+/// A compact case switch, with the current mode available to assistive tools.
+fn case_button(ui: &mut Ui, t: &Tokens, on: bool) -> bool {
+    let ink = if on { t.accent } else { t.ink };
+    let button = egui::Button::new(RichText::new("Aa").strong().color(ink))
+        .selected(on).min_size(vec2(KNOB, KNOB));
+    let response = ui.add(button);
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, "Match case"));
+    response.on_hover_text("Match case").clicked()
+}
+
 /// A round, borderless button: washed on hover, accented while `on`.
 fn knob(ui: &mut Ui, t: &Tokens, icon: Icon, label: &str, on: bool) -> Response {
     let (rect, r) = ui.allocate_exact_size(vec2(KNOB, KNOB), Sense::click());
@@ -666,77 +658,3 @@ fn result_row(ui: &mut Ui, t: &Tokens, (hit, needle): (&Hit, &str), on: bool) ->
     r
 }
 
-/// The snippet over two lines at most, its match washed in the accent.
-fn snippet(t: &Tokens, text: &str, needle: &str, width: f32, on: bool) -> LayoutJob {
-    let body = FontId::proportional(t.text_small + 0.5);
-    let plain = TextFormat::simple(body, if on { t.ink } else { t.muted });
-    let marked = TextFormat {
-        font_id: theme::medium(t.text_small + 0.5),
-        color: t.ink,
-        background: t.accent.gamma_multiply(0.22),
-        ..TextFormat::default()
-    };
-    let mut job = LayoutJob::default();
-    match marked_range(text, needle) {
-        Some(m) => {
-            job.append(text.get(..m.start).unwrap_or_default(), 0.0, plain.clone());
-            job.append(text.get(m.clone()).unwrap_or_default(), 0.0, marked);
-            job.append(text.get(m.end..).unwrap_or_default(), 0.0, plain);
-        }
-        None => job.append(text, 0.0, plain),
-    }
-    job.wrap = TextWrapping {
-        max_width: width.max(40.0),
-        max_rows: 2,
-        break_anywhere: false,
-        overflow_character: Some('…'),
-    };
-    job
-}
-
-/// Where `needle` sits in `text`, ignoring case: the match nearest the middle.
-fn marked_range(text: &str, needle: &str) -> Option<Range<usize>> {
-    let fold = |c: char| c.to_lowercase().next().unwrap_or(c);
-    let want: Vec<char> = needle.chars().map(fold).collect();
-    if want.is_empty() {
-        return None;
-    }
-    let chars: Vec<(usize, char)> = text.char_indices().collect();
-    let middle = text.len() / 2;
-    let mut best: Option<Range<usize>> = None;
-    let last = chars.len().checked_sub(want.len())?;
-    for start in 0..=last {
-        let Some(window) = chars.get(start..start + want.len()) else {
-            continue;
-        };
-        let same = window.iter().zip(&want).all(|(&(_, c), &w)| fold(c) == w);
-        if !same {
-            continue;
-        }
-        let from = window.first().map_or(0, |&(b, _)| b);
-        let to = chars
-            .get(start + want.len())
-            .map_or(text.len(), |&(b, _)| b);
-        let nearer = |r: &Range<usize>| r.start.abs_diff(middle) > from.abs_diff(middle);
-        if best.as_ref().is_none_or(nearer) {
-            best = Some(from..to);
-        }
-    }
-    best
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_match_is_found_in_any_case_nearest_the_middle() {
-        let text = "…the Quick fox and the quick dog and the quick cat…";
-        let m = marked_range(text, "QUICK").unwrap_or_default();
-        assert_eq!(text.get(m.clone()), Some("quick"));
-        assert!(m.start > 20 && m.start < 30, "the middle one: {m:?}");
-        assert_eq!(marked_range("ÉCOLE", "école"), Some(0.."ÉCOLE".len()));
-        assert_eq!(marked_range("abc", ""), None);
-        assert_eq!(marked_range("abc", "z"), None);
-    }
-}
