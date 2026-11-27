@@ -243,9 +243,29 @@ fn narrow_recall_keeps_room_for_multiple_attempts_after_scrolling() {
         modifiers: egui::Modifiers::NONE,
     });
     h.run_steps(30);
-    let second = h.query_all_by_label("Close").next().expect("second verdict").rect();
+    let second = h
+        .query_all_by_label("Close")
+        .next()
+        .expect("second verdict")
+        .rect();
     let hint = h.get_by_label("Scroll to browse attempts").rect();
-    assert!(second.bottom() < hint.top(), "the panel shows more than one attempt");
+    assert!(
+        second.bottom() < hint.top(),
+        "the panel shows more than one attempt"
+    );
+    let close = h.get_by_label("Close word details").rect();
+    h.hover_at(second.center());
+    h.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -160.0),
+        phase: egui::TouchPhase::Move,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.run_steps(30);
+    let after = h.query_all_by_label("Close").next().expect("second verdict").rect();
+    assert!(after.top() < second.top() - 20.0, "the inner panel scrolls");
+    assert_eq!(h.get_by_label("Scroll to browse attempts").rect(), hint);
+    assert_eq!(h.get_by_label("Close word details").rect(), close);
 }
 
 #[test]

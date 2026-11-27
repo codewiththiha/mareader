@@ -19,7 +19,7 @@ pub struct Finish {
     marks: Vec<[f32; 4]>,
     crop: Option<[f32; 4]>,
     resize: Option<egui::Vec2>,
-    wheel: Option<[f32; 3]>,
+    wheel: Vec<[f32; 3]>,
 }
 
 impl Finish {
@@ -46,7 +46,7 @@ impl Finish {
                 let [x, y, dy] = n.as_slice() else {
                     return Err("late_wheel=x,y,points".into());
                 };
-                self.wheel = Some([*x, *y, *dy]);
+                self.wheel.push([*x, *y, *dy]);
             }
             _ => return Ok(false),
         }
@@ -59,7 +59,7 @@ impl Finish {
             harness.set_size(size);
             harness.run_steps(15);
         }
-        if let Some([x, y, dy]) = self.wheel {
+        for &[x, y, dy] in &self.wheel {
             harness.hover_at(egui::pos2(x, y));
             harness.event(egui::Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Point,
