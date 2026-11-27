@@ -460,7 +460,11 @@ fn record(model: &mut Library, book: BookId, shown: &Shown, status: WordStatus) 
         meaning: shown.meaning.clone(),
         meaning_by: shown.by,
         synonyms: shown.synonyms.clone(),
-        usages: if shown.usage.is_empty() { Vec::new() } else { vec![shown.usage.clone()] },
+        usages: if shown.usage.is_empty() {
+            Vec::new()
+        } else {
+            vec![shown.usage.clone()]
+        },
         status,
         ..NewWord::default()
     };

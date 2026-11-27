@@ -422,7 +422,11 @@ impl Merge for WordSighting {
             self.alive.at,
         ];
         let fields = fields.map(Some);
-        newest(fields.into_iter().chain([self.extra.latest(), self.recall_history.latest()]))
+        newest(
+            fields
+                .into_iter()
+                .chain([self.extra.latest(), self.recall_history.latest()]),
+        )
     }
 }
 

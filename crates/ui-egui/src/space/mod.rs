@@ -99,10 +99,10 @@ impl SpaceUi {
             self.detail = None;
             self.lookup = None;
         }
-        if let Some(detail) = &mut self.detail {
-            if !detail.show(ui.ctx(), &t) {
-                self.detail = None;
-            }
+        if let Some(detail) = &mut self.detail
+            && !detail.show(ui.ctx(), &t)
+        {
+            self.detail = None;
         }
         asked
     }
@@ -121,12 +121,16 @@ impl SpaceUi {
     }
 
     pub fn set_lookup_ticket(&mut self, ticket: mareader_dict::Ticket) {
-        if let Some(detail) = &mut self.detail { detail.ticket(ticket); }
+        if let Some(detail) = &mut self.detail {
+            detail.ticket(ticket);
+        }
     }
 
     pub fn receive(&mut self, replies: &[mareader_dict::Reply]) {
         if let Some(detail) = &mut self.detail {
-            for reply in replies { detail.receive(reply); }
+            for reply in replies {
+                detail.receive(reply);
+            }
         }
     }
 

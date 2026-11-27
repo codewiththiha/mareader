@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 
 use mareader_library::{BookId, LearnedBy, Library, WordSighting, WordState, WordStatus};
 
-use super::{BANDS, Counts, Filter, Group, History, MetAt, Row, Scope, Section, Shelf, Sort, Stats, View};
+use super::{
+    BANDS, Counts, Filter, Group, History, MetAt, Row, Scope, Section, Shelf, Sort, Stats, View,
+};
 use crate::export::civil;
 
 const DAY_MS: u64 = 86_400_000;

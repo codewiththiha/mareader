@@ -239,7 +239,10 @@ fn erasing_a_book_tombstones_recall_text_on_sync() {
     let one = book(&mut lib, "/a.epub", 1);
     let new = NewWord {
         by: LearnedBy::Reactive,
-        answers: vec![RecallAnswer { text: "my answer".into(), ..Default::default() }],
+        answers: vec![RecallAnswer {
+            text: "my answer".into(),
+            ..Default::default()
+        }],
         ..word("lintel", WordStatus::Learning)
     };
     lib.record_word(one, new, 2_000);
