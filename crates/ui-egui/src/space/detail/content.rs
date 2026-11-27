@@ -282,8 +282,7 @@ fn recall(ui: &mut Ui, detail: &Detail, t: &Tokens) {
     }
 }
 
-// Once the pointer is in an overflowing section, reaching its end must not
-// move the surrounding card on the remaining wheel momentum.
+// Keep wheel momentum from scrolling the card at a section's edge.
 fn keep_wheel_inside<R>(ui: &Ui, scrolled: &egui::scroll_area::ScrollAreaOutput<R>) {
     let rect = scrolled.inner_rect.intersect(ui.clip_rect());
     if scrolled.content_size.y > scrolled.inner_rect.height() + 1.0
