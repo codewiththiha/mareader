@@ -24,7 +24,7 @@ use crate::widgets;
 
 /// The page's own label, which tests and the titlebar find it by.
 pub const TITLE: &str = "Notes";
-const LINE: &str = "Highlights, notes, bookmarks and saved AI answers from every book. Click one to read it again.";
+const LINE: &str = "Highlights, notes, bookmarks and saved AI answers from every book.";
 const SEARCH_W: f32 = 320.0;
 const NONE_YET: &str = "Highlight words while reading, or add a note or a bookmark.";
 const NONE_MATCH: &str = "Try other words, another chip or another book.";
@@ -80,31 +80,39 @@ pub(super) fn column(
     selection.finish();
 }
 
-/// The title and its line beside the search.
+/// On narrow screens, stack the search below the full-width heading.
 fn header(ui: &mut Ui, filter: &mut NotesFilter, t: &Tokens) {
-    ui.horizontal_top(|ui| {
-        let wide = ui.available_width();
-        let words = (wide - SEARCH_W - 24.0).max(wide * 0.5);
-        let down = egui::Layout::top_down(egui::Align::Min);
-        ui.allocate_ui_with_layout(vec2(words, 0.0), down, |ui| {
-            ui.spacing_mut().item_spacing.y = 4.0;
-            let title = egui::RichText::new(TITLE).font(theme::semibold(30.0));
-            ui.add(egui::Label::new(title.color(t.ink)).selectable(false));
-            let line = egui::RichText::new(LINE).size(t.text + 1.0).color(t.muted);
-            ui.add(egui::Label::new(line).wrap().selectable(false));
+    if ui.available_width() < 560.0 {
+        header_words(ui, t);
+        search(ui, filter);
+    } else {
+        ui.horizontal_top(|ui| {
+            let wide = ui.available_width();
+            let words = (wide - SEARCH_W - 24.0).max(wide * 0.5);
+            ui.allocate_ui_with_layout(vec2(words, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| header_words(ui, t));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| search(ui, filter));
         });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-            let width = SEARCH_W.min(ui.available_width());
-            widgets::input(&mut filter.text)
-                .id(egui::Id::new("space-notes-search"))
-                .icon(Icon::Search)
-                .hint("Search quotes, notes and AI answers")
-                .label("Search your notes")
-                .clearable(true)
-                .width(width)
-                .show(ui);
-        });
-    });
+    }
+}
+
+fn header_words(ui: &mut Ui, t: &Tokens) {
+    ui.spacing_mut().item_spacing.y = 4.0;
+    let title = egui::RichText::new(TITLE).font(theme::semibold(30.0));
+    ui.add(egui::Label::new(title.color(t.ink)).selectable(false));
+    let line = egui::RichText::new(LINE).size(t.text + 1.0).color(t.muted);
+    ui.add(egui::Label::new(line).wrap().selectable(false));
+}
+
+fn search(ui: &mut Ui, filter: &mut NotesFilter) {
+    let width = SEARCH_W.min(ui.available_width());
+    widgets::input(&mut filter.text)
+        .id(egui::Id::new("space-notes-search"))
+        .icon(Icon::Search)
+        .hint("Search quotes, notes and AI answers")
+        .label("Search your notes")
+        .clearable(true)
+        .width(width)
+        .show(ui);
 }
 
 /// The books as a menu, for a page too narrow for the rail.
