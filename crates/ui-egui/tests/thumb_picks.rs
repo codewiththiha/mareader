@@ -217,3 +217,26 @@ fn translation_submenu_offers_recent_and_all_languages() {
         Some("ja")
     );
 }
+
+#[test]
+fn translate_click_runs_the_picked_pages_without_setting_a_preference() {
+    let mut h = reader();
+    h.state_mut().set_option("provider", "ollama").unwrap();
+    h.state_mut().set_option("page_ai_hold", "true").unwrap();
+    h.run();
+    click(&mut h, 2, Modifiers::COMMAND);
+    h.get_by_label("Page 2").click_secondary();
+    h.run();
+    h.get_by_label("Translate").click();
+    h.run_steps(4);
+    let ledger = &h.state().page_ai().ledger;
+    assert!(
+        ledger.runs.iter().any(|r| r.task
+            == mareader_library::AiTask::Translate {
+                language: "en".into(),
+            }),
+        "runs: {:?}",
+        ledger.runs.iter().map(|r| &r.task).collect::<Vec<_>>()
+    );
+    assert_eq!(h.state().settings().ai.tasks.translate.language, None);
+}
