@@ -10,10 +10,11 @@ use crate::theme::Tokens;
 const HEIGHT: f32 = 25.0;
 const WIDTH: f32 = 196.0;
 
-pub(super) fn builtins(ui: &mut Ui) -> Option<super::BarPress> {
+pub(super) fn builtins(ui: &mut Ui, parent: Option<Rect>) -> Option<super::BarPress> {
     let choices = crate::language_menu::offered(ui.ctx());
-    let mut chosen = crate::language_menu::show(ui, &choices, |ui| row(ui, "Translate", true))
-        .map(super::BarPress::Translate);
+    let mut chosen =
+        crate::language_menu::show_beside(ui, &choices, parent, |ui| row(ui, "Translate", true))
+            .map(super::BarPress::Translate);
     for task in [PageTask::Summarize, PageTask::Simplify] {
         if row(ui, task.label(), false).clicked() {
             chosen = Some(super::BarPress::Skill(Skill::Builtin(task)));
@@ -22,7 +23,11 @@ pub(super) fn builtins(ui: &mut Ui) -> Option<super::BarPress> {
     chosen
 }
 
-pub(super) fn custom(ui: &mut Ui, skills: &[(Skill, String)]) -> Option<Skill> {
+pub(super) fn custom(
+    ui: &mut Ui,
+    skills: &[(Skill, String)],
+    parent: Option<Rect>,
+) -> Option<Skill> {
     let spec = Spec {
         items: skills,
         find: crate::skill_menu::FIND,
@@ -34,9 +39,10 @@ pub(super) fn custom(ui: &mut Ui, skills: &[(Skill, String)]) -> Option<Skill> {
         width: WIDTH,
         corners: CornerRadius::same(8),
     };
-    side_list::show(
+    side_list::show_beside(
         ui,
         spec,
+        parent,
         |ui| row(ui, crate::skill_menu::ROW, true),
         |ui, _, name| row(ui, name, false).clicked(),
     )

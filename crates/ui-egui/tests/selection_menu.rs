@@ -266,3 +266,55 @@ fn arrow_keys_choose_a_language_without_searching() {
         Some("bn")
     );
 }
+
+#[test]
+fn skill_submenus_do_not_cover_the_selection_menu() {
+    for (width, text) in [
+        (1000.0, "quick brown"),
+        (600.0, "0123456789"),
+        (320.0, "quick brown"),
+    ] {
+        for (row, item) in [("Translate", "Burmese"), ("Custom skills", "Quiz me")] {
+            let mut h = reader(&[("pdf", "sample:5"), ("custom_skills", "Quiz_me")]);
+            h.set_size(egui::vec2(width, 700.0));
+            h.run_steps(10);
+            let pane = h.state().active_pane();
+            let doc = h.state().documents().reading(pane).unwrap().doc;
+            h.state_mut().queue(Sent::Engine(Command::SelectText {
+                pane,
+                page: 0,
+                text: text.into(),
+            }));
+            h.run_steps(30);
+            h.get_by_label(row).hover();
+            h.run_steps(10);
+            let parent_id = egui::Id::new(("study-bar", doc));
+            let parent = h.ctx.memory(|m| m.area_rect(parent_id)).unwrap();
+            let child_point = h.get_by_label(item).rect().center();
+            let layer = h.ctx.layer_id_at(child_point).unwrap();
+            let child = h.ctx.memory(|m| m.area_rect(layer.id)).unwrap();
+            assert!(
+                child.left() >= 0.0 && child.right() <= width,
+                "child outside viewport: {child:?}"
+            );
+            match width as u32 {
+                1000 => assert!(
+                    child.left() >= parent.right(),
+                    "expected right: {parent:?} {child:?}"
+                ),
+                600 => assert!(
+                    child.right() <= parent.left(),
+                    "expected left: {parent:?} {child:?}"
+                ),
+                _ => assert!(
+                    child.top() >= parent.bottom() || child.bottom() <= parent.top(),
+                    "expected vertical fallback: {parent:?} {child:?}"
+                ),
+            }
+            assert!(
+                !parent.intersects(child),
+                "{row}, width {width}: parent {parent:?}, child {child:?}"
+            );
+        }
+    }
+}

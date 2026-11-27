@@ -78,6 +78,7 @@ pub fn show(
         snug: false,
         prefer: Side::Above,
     };
+    let parent = ctx.memory(|m| m.area_rect(id));
     let (_, pressed) = bubble.show(ctx, &t, |ui, cap| {
         let _act = anim::announce(ui, Act::Hover);
         let height = HEIGHT.min(cap).max(0.0);
@@ -92,11 +93,19 @@ pub fn show(
                 .id_salt("selection-tiny")
                 .max_height(height)
                 .show(ui, |ui| {
-                    contents(ui, look, &custom, &mut pen, &t, 84.0, restricted)
+                    contents(ui, look, &custom, &mut pen, &t, 84.0, (restricted, parent))
                 })
                 .inner
         } else {
-            contents(ui, look, &custom, &mut pen, &t, height, restricted)
+            contents(
+                ui,
+                look,
+                &custom,
+                &mut pen,
+                &t,
+                height,
+                (restricted, parent),
+            )
         }
     });
     if pen != was {
@@ -113,7 +122,7 @@ fn contents(
     pen: &mut Option<Pen>,
     t: &Tokens,
     height: f32,
-    restricted: bool,
+    (restricted, parent): (bool, Option<Rect>),
 ) -> Option<BarPress> {
     let mut pressed = None;
     ui.spacing_mut().item_spacing.y = 1.0;
@@ -131,8 +140,8 @@ fn contents(
                 if skills_heading(ui, t) {
                     pressed = Some(BarPress::ManageSkills);
                 }
-                let builtin = skills::builtins(ui);
-                let own = skills::custom(ui, custom).map(BarPress::Skill);
+                let builtin = skills::builtins(ui, parent);
+                let own = skills::custom(ui, custom, parent).map(BarPress::Skill);
                 pressed = pressed.take().or(builtin).or(own);
             }
         });

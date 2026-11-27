@@ -1,6 +1,6 @@
 //! Translation languages shared by selection and page menus.
 
-use egui::{Context, CornerRadius, Id, Response, Ui};
+use egui::{Context, CornerRadius, Id, Rect, Response, Ui};
 use mareader_dict::LANGUAGES;
 use mareader_settings::{AiSettings, PageTask, Provider, Skill, language_name};
 
@@ -69,6 +69,16 @@ pub fn show(
     choices: &Choices,
     row: impl FnOnce(&mut Ui) -> Response,
 ) -> Option<String> {
+    show_beside(ui, choices, None, row)
+}
+
+/// Draws the language list outside an enclosing menu, when given.
+pub fn show_beside(
+    ui: &mut Ui,
+    choices: &Choices,
+    parent: Option<Rect>,
+    row: impl FnOnce(&mut Ui) -> Response,
+) -> Option<String> {
     let spec = Spec {
         items: &choices.items,
         find: FIND,
@@ -76,7 +86,7 @@ pub fn show(
         width: 196.0,
         corners: CornerRadius::same(8),
     };
-    side_list::show(ui, spec, row, |ui, tag, name| {
+    side_list::show_beside(ui, spec, parent, row, |ui, tag, name| {
         widgets::menu_check_row(ui, name, choices.current.as_ref() == Some(tag)).clicked()
     })
     .picked

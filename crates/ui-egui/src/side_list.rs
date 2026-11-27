@@ -93,6 +93,17 @@ pub fn show<T: Clone>(
     row: impl FnOnce(&mut Ui) -> Response,
     cell: impl FnMut(&mut Ui, &T, &str) -> bool,
 ) -> Shown<T> {
+    show_beside(ui, spec, None, row, cell)
+}
+
+/// Like `show`, but keeps the list outside an enclosing menu.
+pub fn show_beside<T: Clone>(
+    ui: &mut Ui,
+    spec: Spec<'_, T>,
+    parent: Option<Rect>,
+    row: impl FnOnce(&mut Ui) -> Response,
+    cell: impl FnMut(&mut Ui, &T, &str) -> bool,
+) -> Shown<T> {
     let ctx = ui.ctx().clone();
     let (now, pass) = (ui.input(|i| i.time), ctx.cumulative_pass_nr());
     let under = ui.painter().add(Shape::Noop);
@@ -127,17 +138,11 @@ pub fn show<T: Clone>(
         open = false;
     }
     let mut picked = None;
-    let shown = egui::Popup::from_response(&resp)
-        .id(id.with("list"))
-        .open(open)
-        .sense(widgets::POPUP_SENSE)
-        .align(egui::RectAlign::RIGHT_START)
-        .gap(4.0)
-        .width(spec.width)
-        .show(|ui| {
-            picked = contents(ui, (&spec, id), &mut state, cell);
-            ui.layer_id()
-        });
+    let popup = popup(&resp, id.with("list"), open, spec.width, parent);
+    let shown = popup.show(|ui| {
+        picked = contents(ui, (&spec, id), &mut state, cell);
+        ui.layer_id()
+    });
     let (pos, pressed) = ui.input(|i| (i.pointer.interact_pos(), i.pointer.any_pressed()));
     let inside = shown.as_ref().is_some_and(|s| {
         s.response.contains_pointer() || pos.is_some_and(|p| s.response.rect.contains(p))
@@ -164,6 +169,51 @@ pub fn show<T: Clone>(
     }
     ui.data_mut(|d| d.insert_temp(id, state));
     Shown { row: resp, picked }
+}
+
+/// Keeps a selection list outside its enclosing card when space allows.
+fn popup<'a>(
+    resp: &Response,
+    popup_id: Id,
+    open: bool,
+    width: f32,
+    parent: Option<Rect>,
+) -> egui::Popup<'a> {
+    let mut popup = egui::Popup::from_response(resp)
+        .id(popup_id)
+        .open(open)
+        .sense(widgets::POPUP_SENSE)
+        .align(egui::RectAlign::RIGHT_START)
+        .gap(4.0)
+        .width(width);
+    let ctx = &resp.ctx;
+    if let Some(parent) = parent {
+        let width = ctx
+            .memory(|m| m.area_rect(popup_id))
+            .map_or(width + 14.0, |r| r.width());
+        let room = ctx.content_rect();
+        if room.right() - parent.right() >= width + 4.0
+            || parent.left() - room.left() >= width + 4.0
+        {
+            let anchor = Rect::from_min_max(
+                pos2(parent.left(), resp.interact_rect.top()),
+                pos2(parent.right(), resp.interact_rect.bottom()),
+            );
+            popup = popup
+                .anchor(anchor)
+                .align_alternatives(&[egui::RectAlign::LEFT_START]);
+        } else {
+            popup = popup
+                .anchor(parent)
+                .align(egui::RectAlign::BOTTOM_START)
+                .align_alternatives(&[
+                    egui::RectAlign::TOP_START,
+                    egui::RectAlign::BOTTOM_END,
+                    egui::RectAlign::TOP_END,
+                ]);
+        }
+    }
+    popup
 }
 
 /// The open list: its search field over its items; the one picked.
