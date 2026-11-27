@@ -202,69 +202,71 @@ impl Selection {
 }
 
 fn draw_delete(ctx: &Context, delete: &mut Delete, t: &Tokens) -> (bool, bool) {
-        let mut cancel = false;
-        let mut confirm = false;
-        let shown =
-            Dialog::new("space-delete-words").show(ctx, |ui| {
-                ui.set_width((ctx.content_rect().width() - 64.0).clamp(180.0, 390.0));
-                modal::heading(
-                    ui,
-                    Some((Icon::Alert, t.danger)),
-                    "Delete studied words?",
-                    None,
-                    t,
-                );
-                ui.add_space(10.0);
-                let subject = match delete.rows.as_slice() {
-                    [row] => format!("“{}”", row.lemma),
-                    rows => format!("{} selected items", rows.len()),
-                };
-                let scope = match (delete.merged, delete.rows.as_slice()) {
-                    (true, _) => "all linked books".to_owned(),
-                    (false, [row]) => row
-                        .books
-                        .first()
-                        .cloned()
-                        .unwrap_or_else(|| "the selected book".to_owned()),
-                    (false, _) => "the selected books".to_owned(),
-                };
-                ui.add(egui::Label::new(format!(
+    let mut cancel = false;
+    let mut confirm = false;
+    let shown = Dialog::new("space-delete-words").show(ctx, |ui| {
+        ui.set_width((ctx.content_rect().width() - 64.0).clamp(180.0, 390.0));
+        modal::heading(
+            ui,
+            Some((Icon::Alert, t.danger)),
+            "Delete studied words?",
+            None,
+            t,
+        );
+        ui.add_space(10.0);
+        let subject = match delete.rows.as_slice() {
+            [row] => format!("“{}”", row.lemma),
+            rows => format!("{} selected items", rows.len()),
+        };
+        let scope = match (delete.merged, delete.rows.as_slice()) {
+            (true, _) => "all linked books".to_owned(),
+            (false, [row]) => row
+                .books
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "the selected book".to_owned()),
+            (false, _) => "the selected books".to_owned(),
+        };
+        ui.add(
+            egui::Label::new(format!(
                 "Remove {subject} and its study history from {scope}? This cannot be undone."
-            )).wrap());
-                ui.add_space(10.0);
-                let before = delete.ai;
-                modal::switch_card(
-                    ui,
-                    &mut delete.ai,
-                    "Also delete from AI dictionary",
-                    "Removes matching meanings in all languages, even if another book uses them.",
-                    Some(t.danger),
-                    t,
-                );
-                if before != delete.ai {
-                    delete.sure = false;
-                }
-                ui.add_space(12.0);
-                modal::buttons(ui, |ui| {
-                    let label = if delete.sure {
-                        "Are you sure?"
-                    } else {
-                        "Delete"
-                    };
-                    if modal::primary(ui, label, t.danger, t).clicked() {
-                        if delete.sure {
-                            confirm = true;
-                        } else {
-                            delete.sure = true;
-                        }
-                    }
-                    if modal::quiet(ui, "Cancel", t).clicked() {
-                        cancel = true;
-                    }
-                });
-            });
-        if shown.should_close() {
-            cancel = true;
+            ))
+            .wrap(),
+        );
+        ui.add_space(10.0);
+        let before = delete.ai;
+        modal::switch_card(
+            ui,
+            &mut delete.ai,
+            "Also delete from AI dictionary",
+            "Removes matching meanings in all languages, even if another book uses them.",
+            Some(t.danger),
+            t,
+        );
+        if before != delete.ai {
+            delete.sure = false;
         }
+        ui.add_space(12.0);
+        modal::buttons(ui, |ui| {
+            let label = if delete.sure {
+                "Are you sure?"
+            } else {
+                "Delete"
+            };
+            if modal::primary(ui, label, t.danger, t).clicked() {
+                if delete.sure {
+                    confirm = true;
+                } else {
+                    delete.sure = true;
+                }
+            }
+            if modal::quiet(ui, "Cancel", t).clicked() {
+                cancel = true;
+            }
+        });
+    });
+    if shown.should_close() {
+        cancel = true;
+    }
     (cancel, confirm)
 }

@@ -376,4 +376,3 @@ fn word_details_open_from_cards_without_breaking_row_actions() {
     h.run();
     assert_eq!(status(&h, "ponder"), Some(WordStatus::Memorized));
 }
-

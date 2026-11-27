@@ -118,11 +118,17 @@ fn context_navigation_can_return_to_its_word() -> Out {
     let expanded = h.get_by_label("Go back to vocabs").rect();
     h.run_steps(340);
     let folded = h.get_by_label("Go back to vocabs").rect();
-    assert!(folded.width() < expanded.width(), "return control folds after five seconds");
+    assert!(
+        folded.width() < expanded.width(),
+        "return control folds after five seconds"
+    );
     h.hover_at(folded.center());
     h.run_steps(10);
     let hovered = h.get_by_label("Go back to vocabs").rect();
-    assert!(hovered.width() > folded.width(), "hover expands the control");
+    assert!(
+        hovered.width() > folded.width(),
+        "hover expands the control"
+    );
     h.get_by_label("Go back to vocabs").click();
     h.run_steps(30);
     assert_eq!(h.state().route(), Route::Space);

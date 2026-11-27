@@ -58,4 +58,3 @@ pub(super) fn pick(
         }
     }
 }
-

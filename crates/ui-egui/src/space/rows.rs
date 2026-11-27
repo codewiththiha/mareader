@@ -8,12 +8,12 @@ use mareader_library::{LearnedBy, WordStatus};
 
 mod interact;
 
-use interact::{pick, row_hit};
 use super::{look, selection::Selection, sentence};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent, UiCommand};
 use crate::widgets;
+use interact::{pick, row_hit};
 
 const CARD_W: f32 = 236.0;
 /// A card's margins and stroke on both sides, around its `CARD_W`.
