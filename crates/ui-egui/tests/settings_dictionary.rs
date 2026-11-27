@@ -19,3 +19,23 @@ fn downloaded_languages_fold_without_removing_the_packs() {
     h.run();
     h.get_by_label("Remove English → French");
 }
+
+#[test]
+fn default_language_dropdown_finds_and_selects_a_pack() {
+    let dir = crate::dictionary::shelf();
+    let mut h = crate::dictionary::reader(dir.path());
+    h.state_mut()
+        .queue(Sent::Engine(Command::OpenSettings(Tab::Dictionary)));
+    h.run();
+    crate::common::scroll(&mut h, 1000.0);
+    h.get_by_label("Default language").click();
+    h.run();
+    h.event(egui::Event::Text("french".to_owned()));
+    h.run();
+    h.key_press(egui::Key::Enter);
+    h.run();
+    assert_eq!(
+        h.state().settings().dictionary.default_lang.as_deref(),
+        Some("fr")
+    );
+}

@@ -202,14 +202,15 @@ fn writer(by: Option<MeaningBy>) -> &'static str {
 /// The word classes met, or any.
 fn class(ui: &mut Ui, poses: &[String], pos: &mut Option<String>) {
     let shown = pos.as_deref().unwrap_or("Any");
-    widgets::combo("space-class")
-        .selected_text(shown)
-        .width(ui.available_width())
-        .height(240.0)
-        .show_ui(ui, |ui| {
-            ui.selectable_value(pos, None, "Any");
-            for p in poses {
-                ui.selectable_value(pos, Some(p.clone()), p.as_str());
-            }
-        });
+    let mut items = vec![(None, "Any".to_owned())];
+    items.extend(poses.iter().map(|p| (Some(p.clone()), p.clone())));
+    let width = ui.available_width();
+    crate::dropdown::select(
+        ui,
+        egui::Id::new("space-class"),
+        shown.to_owned(),
+        width,
+        pos,
+        &items,
+    );
 }

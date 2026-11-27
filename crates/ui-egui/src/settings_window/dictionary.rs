@@ -277,22 +277,21 @@ fn default_language(ui: &mut Ui, s: &mut DictionarySettings, offered: &[String])
         "Lookup cards, word lists and dictionary decks answer in it",
         |ui| {
             ui.add_enabled_ui(!offered.is_empty(), |ui| {
-                widgets::combo("dict-default-lang")
-                    .width(180.0)
-                    .selected_text(shown)
-                    .show_ui(ui, |ui| {
-                        if ui.selectable_label(chosen.is_none(), "Automatic").clicked() {
-                            s.default_lang = None;
-                        }
-                        for l in offered {
-                            if ui
-                                .selectable_label(chosen == Some(l.as_str()), language(l))
-                                .clicked()
-                            {
-                                s.default_lang = Some(l.clone());
-                            }
-                        }
-                    });
+                let mut selected = chosen.map(str::to_owned);
+                let before = selected.clone();
+                let mut items = vec![(None, "Automatic".to_owned())];
+                items.extend(offered.iter().map(|tag| (Some(tag.clone()), language(tag))));
+                crate::dropdown::select(
+                    ui,
+                    egui::Id::new("dict-default-lang"),
+                    shown,
+                    180.0,
+                    &mut selected,
+                    &items,
+                );
+                if selected != before {
+                    s.default_lang = selected;
+                }
             });
         },
     );

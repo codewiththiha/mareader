@@ -282,14 +282,15 @@ fn pick<T: Copy + PartialEq>(
         false => all.first().copied().unwrap_or(*value),
     };
     look::quiet(ui, name, t.text + 1.0, t);
-    widgets::combo(("space", name))
-        .selected_text(label(shown))
-        .width(120.0)
-        .show_ui(ui, |ui| {
-            for &v in all {
-                ui.selectable_value(value, v, label(v));
-            }
-        });
+    let items: Vec<_> = all.iter().map(|&v| (v, label(v).to_owned())).collect();
+    crate::dropdown::select(
+        ui,
+        egui::Id::new(("space", name)),
+        label(shown),
+        120.0,
+        value,
+        &items,
+    );
 }
 
 fn view_face(cards: bool) -> (Option<Icon>, &'static str) {

@@ -23,6 +23,7 @@ pub mod crossfade;
 pub mod dial_deck;
 pub mod dict;
 pub mod documents;
+pub mod dropdown;
 pub mod files;
 pub mod find_bar;
 pub mod floating_label;

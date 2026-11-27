@@ -101,16 +101,17 @@ fn header(ui: &mut Ui, filter: &mut NotesFilter, t: &Tokens) {
 fn books(ui: &mut Ui, view: &NotesView, filter: &mut NotesFilter) {
     let picked = view.books.iter().find(|s| Some(s.id) == filter.book);
     let shown = picked.map_or("All books", |s| s.title.as_str());
-    widgets::combo("space-notes-book")
-        .selected_text(shown)
-        .width(ui.available_width().min(320.0))
-        .height(280.0)
-        .show_ui(ui, |ui| {
-            ui.selectable_value(&mut filter.book, None, "All books");
-            for s in &view.books {
-                ui.selectable_value(&mut filter.book, Some(s.id), s.title.as_str());
-            }
-        });
+    let mut items = vec![(None, "All books".to_owned())];
+    items.extend(view.books.iter().map(|s| (Some(s.id), s.title.clone())));
+    let width = ui.available_width().min(320.0);
+    crate::dropdown::select(
+        ui,
+        egui::Id::new("space-notes-book"),
+        shown,
+        width,
+        &mut filter.book,
+        &items,
+    );
 }
 
 /// A book's title and its count in a soft pill.
