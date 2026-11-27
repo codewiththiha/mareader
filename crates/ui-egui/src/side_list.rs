@@ -129,7 +129,9 @@ pub fn show_beside_with<T: Clone>(
     let shown = popup.show(|ui| {
         crate::z_order::register_popup(ui.ctx(), ui.layer_id());
         widgets::menu_style(ui, spec.width);
+        let top = ui.cursor().top();
         let control = header.as_mut().map(|draw| draw(ui));
+        let list_h = (list_h - (ui.cursor().top() - top)).max(40.0);
         let in_header = control.as_ref().is_some_and(|control| {
             header_focus(
                 ui,
