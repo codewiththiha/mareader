@@ -243,7 +243,11 @@ fn settings_clear_one_language_from_the_ai_dictionary() {
     h.state_mut().queue(open);
     h.run();
     h.get_by_label("AI dictionary");
+    h.get_by_label("About Lookup card").click();
+    h.run();
     h.get_by_label(mareader_ui_egui::settings_window::ELSEWHERE);
+    h.get_by_label("About Lookup card").click();
+    h.run();
     let clears = h.query_all_by_label_contains("Clear: ");
     let labels = clears.filter_map(|n| n.accesskit_node().label());
     let rows: Vec<String> = labels.collect();

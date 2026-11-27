@@ -9,7 +9,7 @@ use mareader_settings::{
 };
 
 use super::highlights::{palette, preview};
-use super::{ROW_H, choices, divider, group, note, row, section};
+use super::{ROW_H, choices, divider, group, note, row, section, section_help};
 use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
@@ -284,7 +284,11 @@ fn library(ui: &mut Ui, ai: &mut AiSettings) {
 
 /// Selection AI's model, the built-ins' options, and how pages go on.
 fn pages(ui: &mut Ui, ai: &mut AiSettings, board: Option<&Board>) {
-    section(ui, "Selections and pages");
+    section_help(
+        ui,
+        "Selections and pages",
+        &[("", "A skill can ask a model of its own; see Skills.")],
+    );
     let apple = ai
         .page_model(PageTask::Translate)
         .is_some_and(|p| p.provider == Provider::Apple);
@@ -296,8 +300,14 @@ fn pages(ui: &mut Ui, ai: &mut AiSettings, board: Option<&Board>) {
         }
         page_rows(ui, ai, &speaks);
     });
-    note(ui, "A skill can ask a model of its own; see Skills.");
-    section(ui, "More than one page");
+    section_help(
+        ui,
+        "More than one page",
+        &[(
+            "",
+            "Pages at once never passes what the model allows; see AI models.",
+        )],
+    );
     group(ui, |ui| {
         let tip = "Continuous mode: time on a page, its result shown, before more are asked";
         row(ui, "Time on a page", tip, |ui| {
@@ -326,10 +336,6 @@ fn pages(ui: &mut Ui, ai: &mut AiSettings, board: Option<&Board>) {
             run.per_request = n.round().clamp(1.0, hi) as u8;
         });
     });
-    note(
-        ui,
-        "Pages at once never passes what the model allows; see AI models.",
-    );
     let chosen = ai.tasks.translate.language.as_deref();
     let name = chosen.and_then(mareader_settings::language_name);
     if let (Some(tag), Some(name)) = (chosen, name)

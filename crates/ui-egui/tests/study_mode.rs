@@ -166,6 +166,8 @@ fn the_study_tab_comes_with_an_ai_or_a_dictionary() {
     assert!(!choice, "one writer, no choice");
     let slider = h.query_by_label("Reading level").is_some();
     assert!(!slider, "Vocabulary sets the level");
+    h.get_by_label("About Mode").click();
+    h.run();
     let level = h.query_by_label_contains("Uses your Vocabulary level");
     assert!(level.is_some(), "the tab names the level it uses");
 }

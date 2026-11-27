@@ -5,7 +5,7 @@ use egui::{Button, RichText, Ui};
 use mareader_settings::{CefrLevel, Settings, StudyModeSettings};
 use mareader_study::mode::{MAX_PAGES, Mode, Source, Unit};
 
-use super::{choices, divider, group, note, row, section, switch_row};
+use super::{choices, divider, group, row, section, section_help, switch_row};
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent, UiCommand};
 use crate::widgets;
@@ -22,7 +22,8 @@ const BARE: (&str, &str) = ("", "");
 
 /// The tab, given who could write the cards: an AI, a dictionary.
 pub fn tab(ui: &mut Ui, s: &mut Settings, (ai, dict): (bool, bool), out: &mut Commands) {
-    section(ui, "Mode");
+    let level = level(s.study.cefr.level);
+    section_help(ui, "Mode", &[("", &level)]);
     group(ui, |ui| {
         let hint = "The one the page menu's Study switch turns on";
         let m = &mut s.study.mode;
@@ -30,16 +31,14 @@ pub fn tab(ui: &mut Ui, s: &mut Settings, (ai, dict): (bool, bool), out: &mut Co
             choices(ui, &mut m.mode, &Mode::ALL, Mode::label);
         });
     });
-    note(ui, &level(s.study.cefr.level));
     batches(ui, &mut s.study.mode);
     proactive(ui, &mut s.study.mode, ai && dict);
-    section(ui, "Reactive");
+    section_help(ui, "Reactive", &[("", ANY_LANGUAGE)]);
     group(ui, |ui| {
         let hint = "After a correct answer; off memorizes it at once";
         let ask = &mut s.study.mode.ask_memorize;
         switch_row(ui, "Ask before adding to memorized", hint, ask);
     });
-    note(ui, ANY_LANGUAGE);
     #[cfg(not(target_arch = "wasm32"))]
     model(ui, &mut s.ai);
     space(ui, out);

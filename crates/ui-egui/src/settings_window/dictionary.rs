@@ -7,7 +7,7 @@ use mareader_settings::{DictionaryOpens, DictionarySettings};
 
 use super::downloads::{Buttons, muted, progress};
 use super::{
-    choice_row, divider, fold_open, fold_row, folded, group, note, row, section, switch_row,
+    choice_row, divider, fold_open, fold_row, folded, group, note, row, section_help, switch_row,
 };
 use crate::dict::{count, megabytes};
 use crate::icons::Icon;
@@ -28,18 +28,24 @@ pub const DOWNLOADED_LANGUAGES: &str = "Downloaded languages";
 pub const ALL_LANGUAGES: &str = "Available languages";
 
 pub fn tab(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService, out: &mut Commands) {
-    section(ui, "Language packs");
-    packs(ui, dict, out);
-    if dict.attached() {
-        note(
-            ui,
+    section_help(
+        ui,
+        "Language packs",
+        &[(
+            "",
             "Packs work offline once downloaded. A paused download resumes where it stopped.",
-        );
-    } else {
+        )],
+    );
+    packs(ui, dict, out);
+    if !dict.attached() {
         note(ui, "Downloads need the desktop app.");
     }
     ai_dictionary(ui, dict, out);
-    section(ui, "In the reader");
+    section_help(
+        ui,
+        "In the reader",
+        &[("", "The Dictionary button and Cmd/Ctrl+Shift+D open it so.")],
+    );
     group(ui, |ui| {
         for (i, (choice, title, detail)) in OPENS.into_iter().enumerate() {
             if i > 0 {
@@ -50,7 +56,6 @@ pub fn tab(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService, out: &mu
             }
         }
     });
-    note(ui, "The Dictionary button and Cmd/Ctrl+Shift+D open it so.");
     lookup_card(ui, s, dict);
     saying(ui, s);
 }
@@ -128,7 +133,9 @@ fn ai_dictionary(ui: &mut Ui, dict: &DictService, out: &mut Commands) {
         return;
     }
     langs.sort_by_key(|l| language(l));
-    section(ui, "AI dictionary");
+    let why = "Meanings AI wrote on this computer, by language. Clearing one deletes \
+               them; cards and decks then ask the AI again.";
+    section_help(ui, "AI dictionary", &[("", why)]);
     group(ui, |ui| {
         for (i, lang) in langs.iter().enumerate() {
             if i > 0 {
@@ -137,9 +144,6 @@ fn ai_dictionary(ui: &mut Ui, dict: &DictService, out: &mut Commands) {
             ai_row(ui, lang, out);
         }
     });
-    let why = "Meanings AI wrote on this computer, by language. Clearing one deletes \
-               them; cards and decks then ask the AI again.";
-    note(ui, why);
 }
 
 /// One AI dictionary language: Clear, then Clear for good or Keep.
@@ -169,20 +173,25 @@ fn ai_row(ui: &mut Ui, lang: &str, out: &mut Commands) {
 
 /// Whether other languages' voices say their words.
 fn saying(ui: &mut Ui, s: &mut DictionarySettings) {
-    section(ui, "Saying words");
+    section_help(
+        ui,
+        "Saying words",
+        &[(
+            "",
+            "Only voices of the engine in use. Each may sound unlike yours.",
+        )],
+    );
     group(ui, |ui| {
         let hint = "A word in another language is said by a voice downloaded for it";
         switch_row(ui, "Use other languages' voices", hint, &mut s.other_voices);
     });
-    note(
-        ui,
-        "Only voices of the engine in use. Each may sound unlike yours.",
-    );
 }
 
 /// The card's language, near matches and which dictionary leads.
 fn lookup_card(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService) {
-    section(ui, "Lookup card");
+    let why = "The card answers in this language. A language is offered once its pack is \
+               downloaded, or once the AI dictionary keeps a meaning in it.";
+    section_help(ui, "Lookup card", &[("", why), ("", ELSEWHERE)]);
     group(ui, |ui| {
         let langs = dict.languages();
         default_language(ui, s, &langs);
@@ -193,10 +202,6 @@ fn lookup_card(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService) {
         let hint = "Meanings AI wrote on this computer show before the packs' rows";
         switch_row(ui, "AI dictionary first", hint, &mut s.ai_first);
     });
-    let why = "The card answers in this language. A language is offered once its pack is \
-               downloaded, or once the AI dictionary keeps a meaning in it.";
-    note(ui, why);
-    note(ui, ELSEWHERE);
 }
 
 /// A pack named by its language; buttons keep the full "English → X".
