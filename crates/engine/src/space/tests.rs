@@ -166,6 +166,7 @@ fn history_respects_the_selected_books_and_keeps_every_session() {
     assert_eq!(history(&lib, row).len(), 2);
     let detail = detail_row(&lib, row.clone());
     assert_eq!(detail.books, ["One", "Two"]);
+    assert_eq!(detail.seen, NOV);
     assert_eq!(history(&lib, &detail).len(), 3);
 }
 

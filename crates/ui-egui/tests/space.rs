@@ -227,6 +227,29 @@ fn recall_scrolls_independently_of_the_word_and_header() {
 }
 
 #[test]
+fn long_context_scrolls_without_moving_recall() {
+    let mut h = words();
+    h.get_by_label("Merged").click();
+    h.run();
+    h.get_by_label("Details for gaunt").click();
+    h.run_steps(30);
+    let text = "The gaunt hound watched from the porch, its ears raised toward the distant road";
+    let before = h.get_by_label_contains(text).rect();
+    let recall = h.query_all_by_label("Wrong").next().expect("attempt").rect();
+    let hint = h.get_by_label("Scroll to read more").rect();
+    h.hover_at(hint.center() - egui::vec2(0.0, 60.0));
+    h.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -180.0),
+        phase: egui::TouchPhase::Move,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.run_steps(30);
+    assert!(h.get_by_label_contains(text).rect().top() < before.top() - 10.0);
+    assert_eq!(h.query_all_by_label("Wrong").next().expect("attempt").rect(), recall);
+}
+
+#[test]
 fn long_book_title_line_scrolls_without_moving_close() {
     let mut h = words();
     h.get_by_label("Merged").click();
