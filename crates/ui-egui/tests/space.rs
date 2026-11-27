@@ -177,7 +177,7 @@ fn narrow_word_details_scroll_without_moving_the_header() {
     h.run_steps(30);
     h.set_size(egui::vec2(620.0, 680.0));
     h.run_steps(15);
-    let before = h.get_by_label("Your recall").rect().top();
+    let before = h.get_by_label("Correct").rect().top();
     let close = h.get_by_label("Close word details").rect();
     h.hover_at(egui::pos2(310.0, 400.0));
     h.event(egui::Event::MouseWheel {
@@ -187,7 +187,7 @@ fn narrow_word_details_scroll_without_moving_the_header() {
         modifiers: egui::Modifiers::NONE,
     });
     h.run_steps(30);
-    assert!(h.get_by_label("Your recall").rect().top() < before - 20.0);
+    assert!(h.get_by_label("Correct").rect().top() < before - 20.0);
     assert_eq!(h.get_by_label("Close word details").rect(), close);
 }
 
