@@ -15,6 +15,7 @@ use mareader_settings::{AiSettings, ModelPreset, PageTask, PresetId, Provider, S
 use mareader_study::Failure;
 
 mod jobs;
+mod provider_picker;
 
 pub(super) const FIELD_W: f32 = 260.0;
 const PICK_W: f32 = 240.0;
@@ -629,7 +630,7 @@ fn fields(ui: &mut Ui, p: &mut ModelPreset, board: Option<&Board>, out: &mut Com
         input.width(FIELD_W).compact().show(ui);
     });
     divider(ui);
-    row(ui, "Provider", "", |ui| provider_picker(ui, p));
+    row(ui, "Provider", "", |ui| provider_picker::show(ui, p));
     if p.provider.server() {
         divider(ui);
         model_row(ui, p, board, out);
@@ -638,27 +639,6 @@ fn fields(ui: &mut Ui, p: &mut ModelPreset, board: Option<&Board>, out: &mut Com
     let tip = "Tasks this model may run at the same time";
     let max = ModelPreset::AT_ONCE_MAX;
     count_row(ui, ("At once", tip), &mut p.at_once, (1, max), ("", ""));
-}
-
-/// Apple only where it runs; a switch forgets the old provider's model.
-fn provider_picker(ui: &mut Ui, p: &mut ModelPreset) {
-    let mac = cfg!(target_os = "macos");
-    let before = p.provider;
-    widgets::combo(("ai-provider", p.id.0))
-        .width(PICK_W)
-        .selected_text(p.provider.label())
-        .show_ui(ui, |ui| {
-            let shown = Provider::ALL
-                .into_iter()
-                .filter(|q| mac || *q != Provider::Apple || *q == before);
-            for q in shown {
-                ui.selectable_value(&mut p.provider, q, q.label())
-                    .on_hover_text(q.detail());
-            }
-        });
-    if p.provider != before {
-        p.model.clear();
-    }
 }
 
 /// How much room the model has, and the honest catch with keys.

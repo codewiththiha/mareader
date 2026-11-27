@@ -1,23 +1,18 @@
 //! A book's type, and a PDF's AI pages', in the Appearance tab.
-use std::sync::Arc;
-
-use egui::{Button, RichText, Ui};
-use mareader_session::{FACES, Kind, bundled, has_family};
-use mareader_settings::{
-    AppearanceMenuStyle, BookDesign, ColumnAlign, FontChoice, FontFamily, SystemFont, TextSettings,
-};
+use egui::Ui;
+use mareader_settings::{AppearanceMenuStyle, BookDesign, ColumnAlign, FontFamily, TextSettings};
 
 use mareader_library::{BookId, Design};
 
 use super::{disclosure, divider, group, note, row, section, switch_row};
-use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
 use crate::widgets;
 use mareader_engine::command::Command;
 use mareader_engine::library::Action;
 use mareader_engine::scope::{Scope, Shown};
 
-const PICKER_WIDTH: f32 = 180.0;
+mod font_picker;
+use font_picker::picker;
 
 /// The focused book's own choice, over the setting above.
 fn this_book(ui: &mut Ui, (book, own): (BookId, Option<Design>), out: &mut Commands) {
@@ -362,79 +357,4 @@ fn stepped(
         let name = label.to_lowercase();
         widgets::stepper(ui, value, lo..=hi, step, show, &name);
     });
-}
-
-/// What a pick is called in the picker.
-fn label(choice: &FontChoice) -> &'static str {
-    match choice {
-        FontChoice::Default => "Default",
-        FontChoice::System(f) => f.label(),
-        FontChoice::Bundled(id) => bundled(id).map_or("Default", |f| f.name),
-    }
-}
-
-fn kind(family: FontFamily) -> Kind {
-    match family {
-        FontFamily::Serif => Kind::Serif,
-        FontFamily::Sans => Kind::Sans,
-        FontFamily::Mono => Kind::Mono,
-    }
-}
-
-/// One slot's picker; `only` keeps a family's slot to its own faces.
-fn picker(ui: &mut Ui, name: &str, hint: &str, choice: &mut FontChoice, only: Option<FontFamily>) {
-    row(ui, name, hint, |ui| {
-        widgets::combo(name)
-            .width(PICKER_WIDTH)
-            .selected_text(label(choice))
-            .show_ui(ui, |ui| {
-                ui.selectable_value(choice, FontChoice::Default, "Default");
-                heading(ui, "Bundled");
-                let ours = FACES
-                    .iter()
-                    .filter(|f| only.is_none_or(|o| kind(o) == f.kind));
-                for face in ours {
-                    let pick = FontChoice::Bundled(face.id.to_owned());
-                    ui.selectable_value(choice, pick, face.name);
-                }
-                heading(ui, "On this computer");
-                let installed = installed(ui);
-                let theirs = SystemFont::ALL
-                    .iter()
-                    .filter(|f| only.is_none_or(|o| o == f.family()));
-                for &font in theirs {
-                    let pick = FontChoice::System(font);
-                    let on = *choice == pick;
-                    let button = Button::selectable(on, font.label());
-                    let r = ui.add_enabled(installed.contains(&font), button);
-                    let r = r.on_disabled_hover_text("Not installed");
-                    if r.clicked() {
-                        *choice = pick;
-                    }
-                }
-            });
-    });
-}
-
-fn heading(ui: &mut Ui, text: &str) {
-    let t = Tokens::get(ui.ctx());
-    ui.add_space(4.0);
-    ui.label(RichText::new(text).size(t.text_small).color(t.muted));
-}
-
-/// The system faces this machine has, looked up once per run.
-fn installed(ui: &Ui) -> Arc<[SystemFont]> {
-    let id = egui::Id::new("installed-system-fonts");
-    if let Some(known) = ui.data(|d| d.get_temp::<Arc<[SystemFont]>>(id)) {
-        return known;
-    }
-    // A generic name always finds the system's own face.
-    let generic = |n: &str| matches!(n, "serif" | "sans-serif" | "monospace");
-    let found: Arc<[SystemFont]> = SystemFont::ALL
-        .iter()
-        .copied()
-        .filter(|f| f.names().iter().any(|n| generic(n) || has_family(n)))
-        .collect();
-    ui.data_mut(|d| d.insert_temp(id, Arc::clone(&found)));
-    found
 }
