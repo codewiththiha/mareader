@@ -248,10 +248,10 @@ fn a_failed_request_keeps_the_others_backs_for_the_next_try() {
     job.ask_backs(&mut Filed::default()).unwrap();
     let written = job.writing(&mut Filed::default());
     assert!(written.is_err(), "one failed request fails the deck");
-    assert_eq!(writer.backs.count(), 21, "the other two are kept");
+    assert_eq!(writer.backs.count(), 24, "the other three are kept");
     let mut again = ai_deck(32, &writer);
     again.ask_backs(&mut Filed::default()).unwrap();
-    assert_eq!(*counting.sizes.lock().unwrap(), [11, 11, 10, 11]);
+    assert_eq!(*counting.sizes.lock().unwrap(), [8, 8, 8, 8, 8]);
     assert_eq!(again.writing(&mut Filed::default()), Ok(true));
 }
 

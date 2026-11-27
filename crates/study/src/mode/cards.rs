@@ -44,6 +44,24 @@ pub fn chunks(n: usize, limit: usize) -> Vec<Range<usize>> {
     out
 }
 
+/// Cuts card-writing requests evenly, never exceeding the configured limit.
+/// A zero limit counts as one, and no request may exceed 20; no words
+/// makes no requests.
+pub fn request_chunks(n: usize, limit: usize) -> Vec<Range<usize>> {
+    let limit = limit.clamp(1, usize::from(PER_REQUEST_MAX));
+    let count = n.div_ceil(limit).max(1);
+    let (base, extra) = (n / count, n % count);
+    let mut start = 0;
+    (0..count)
+        .filter_map(|i| {
+            let end = start + base + usize::from(i < extra);
+            let range = (end > start).then_some(start..end);
+            start = end;
+            range
+        })
+        .collect()
+}
+
 /// One word a card is wanted for, as the book uses it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Wanted {
@@ -201,6 +219,35 @@ mod tests {
 
     fn sizes(n: usize, limit: usize) -> Vec<usize> {
         chunks(n, limit).iter().map(Range::len).collect()
+    }
+
+    #[test]
+    fn card_requests_never_exceed_the_configured_limit() {
+        for limit in 1..=20 {
+            for n in 0..=100 {
+                let ranges = request_chunks(n, limit);
+                assert!(ranges.iter().all(|r| r.len() <= limit));
+                assert_eq!(
+                    ranges.iter().flat_map(Range::clone).collect::<Vec<_>>(),
+                    (0..n).collect::<Vec<_>>()
+                );
+            }
+        }
+        assert!(request_chunks(29, 30).iter().all(|r| r.len() <= 20));
+        assert_eq!(
+            request_chunks(32, 10)
+                .iter()
+                .map(Range::len)
+                .collect::<Vec<_>>(),
+            [8, 8, 8, 8]
+        );
+        assert_eq!(
+            request_chunks(13, 10)
+                .iter()
+                .map(Range::len)
+                .collect::<Vec<_>>(),
+            [7, 6]
+        );
     }
 
     #[test]

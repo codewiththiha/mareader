@@ -2,7 +2,7 @@
 //! keeps (`reuse`), then the writer's answers.
 //!
 //! The words still missing are cut into requests of the writer's size
-//! ([`chunks`]) and all asked at once; the model's queue runs as many as
+//! ([`request_chunks`]) and all asked at once; the model's queue runs as many as
 //! it takes and holds the rest. The deck goes on only once every request
 //! has answered. A failed request fails the deck, but the backs the
 //! others wrote stay cached, so trying again asks only the words missing.
@@ -11,7 +11,7 @@
 use mareader_dict::Saved;
 use mareader_settings::{TaskId, no_model};
 use mareader_study::Why;
-use mareader_study::mode::{CardJob, Wanted, Written, chunks};
+use mareader_study::mode::{CardJob, Wanted, Written, request_chunks};
 use mareader_study::pending::News;
 
 use super::{DeckJob, Stage};
@@ -54,7 +54,7 @@ impl DeckJob {
             return;
         }
         let mut rest = asked.into_iter();
-        let jobs = chunks(rest.len(), writer.cards.per_request())
+        let jobs = request_chunks(rest.len(), writer.cards.per_request())
             .into_iter()
             .map(|range| {
                 let asked: Vec<(usize, Wanted)> = rest.by_ref().take(range.len()).collect();

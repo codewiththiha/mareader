@@ -26,8 +26,7 @@ pages.
   sum of (words − Words per deck)² least over all the pages, not just the
   next batch, and among equal sums takes the fewest batches. At 12, pages of
   11, 2, 11 and 2 words make two batches of 13, not four. A batch of several
-  pages stays under 1.5 times the target, the card requests' rule
-  (`chunks`); a page with more stands alone. A batch spans up to 20 pages
+  pages stays under 1.5 times the target (`chunks`); a page with more stands alone. A batch spans up to 20 pages
   (`MAX_WORD_PAGES`). A word on several of its pages counts once; met again
   in a later batch, it counts again.
 - **Pages mode** counts pages that carry text, 1 to 10 (`MAX_PAGES`).
@@ -156,10 +155,10 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   whether only this book uses it, as a name does) on study's model, else
   Explain's, in study's language. The sentence goes along only so the AI
   knows which word and class are meant; the meaning never retells the
-  story. Each request carries about the model's **Cards per request**
-  (in the Study cards model menu, default 10, range 1–20): a deck is cut evenly into `words / limit`
-  requests, rounded half up (`mode::chunks`), so with 10, 13 words go in
-  one request, 15 in 8 and 7, and 32 in 11, 11 and 10. All are asked at
+  story. Each request carries at most the model's **Cards per request**
+  (in the Study cards model menu, default 10, range 1–20). A deck is cut
+  evenly into enough requests to stay within that limit (`request_chunks`):
+  at 10, 13 words go as 7 and 6, and 32 as four groups of 8. All are asked at
   once and the model's queue runs as many as its At once lets in (with
   At once 2 or more, a task of the Ahead class, as study cards are by
   default, leaves one place free for the reader's own asks). A back is
