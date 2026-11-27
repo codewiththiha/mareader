@@ -131,7 +131,7 @@ fn core(ui: &mut Ui, detail: &Detail, t: &Tokens) {
                 ui.add_space(3.0);
                 let scrolled = egui::ScrollArea::vertical()
                     .id_salt(("word-detail-context", detail.row.key))
-                    .max_height(128.0)
+                    .max_height(104.0)
                     .show(ui, |ui| {
                         ui.add(
                             Label::new(sentence::highlight(
