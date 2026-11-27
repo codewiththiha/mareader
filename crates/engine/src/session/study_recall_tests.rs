@@ -13,7 +13,10 @@ fn keeping_and_dismissing_sessions_preserves_answers_and_existing_status() {
     let book = lib.record_open(
         Opened {
             path: PathBuf::from("/recall.epub"),
-            measure: Measure { content: ContentId(1), stamp: Default::default() },
+            measure: Measure {
+                content: ContentId(1),
+                stamp: Default::default(),
+            },
             format: Format::Epub,
             title: "A book".into(),
             author: None,
@@ -40,16 +43,29 @@ fn keeping_and_dismissing_sessions_preserves_answers_and_existing_status() {
         ..Written::default()
     });
     recall.answers.push(RecallAnswer {
-        text: "fast".into(), verdict: "Correct".into(), feedback: "Yes".into(),
+        text: "fast".into(),
+        verdict: "Correct".into(),
+        feedback: "Yes".into(),
     });
-    let done = Done { outcome: Outcome::Memorized, attempts: 1, first_try: true };
+    let done = Done {
+        outcome: Outcome::Memorized,
+        attempts: 1,
+        first_try: true,
+    };
     keep(&mut lib, book, &recall, done, false);
     recall.answers[0].text = "rapid".into();
-    let dismissed = Done { outcome: Outcome::Learning, attempts: 1, first_try: false };
+    let dismissed = Done {
+        outcome: Outcome::Learning,
+        attempts: 1,
+        first_try: false,
+    };
     keep(&mut lib, book, &recall, dismissed, true);
     let seen = lib.sightings(book).into_iter().next().unwrap();
     assert_eq!(seen.recall_history.sessions.len(), 2);
     assert_eq!(seen.synonyms.value, ["brisk"]);
     assert_eq!(seen.usages.value, ["A quick reply."]);
-    assert_eq!(lib.word(seen.word).unwrap().status.value, WordStatus::Memorized);
+    assert_eq!(
+        lib.word(seen.word).unwrap().status.value,
+        WordStatus::Memorized
+    );
 }
