@@ -93,6 +93,11 @@ pub trait CardWriter: Send + Sync {
         None
     }
 
+    /// Re-pins the deck after a confirmed language-capability change.
+    fn compatible_snapshot(&self) -> Option<Arc<dyn CardWriter>> {
+        None
+    }
+
     /// Who writes, as the waiting card names them.
     fn by(&self) -> String;
 

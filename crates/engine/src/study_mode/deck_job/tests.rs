@@ -323,3 +323,5 @@ fn a_card_the_ai_dictionary_keeps_by_lemma_and_class_is_not_written() {
     assert_eq!(job.writing(&mut filed), Ok(true));
     assert_eq!(filed.saved.len(), 1, "only word2 was written with a class");
 }
+
+mod fallback;

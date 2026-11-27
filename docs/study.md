@@ -590,7 +590,12 @@ unset choices now follow the dictionary rather than the book or AI Dictionary.
   the saved choice returns when a compatible model is selected. The check
   also applies after a late probe and before each model request. An
   incompatible Apple backup is skipped rather than changing a request's
-  language or filing an answer under a different language.
+  language or filing an answer under a different language. If a late probe
+  makes the primary model incompatible while an Explain or unshown AI deck
+  is queued, the request is rebuilt once in a supported language on its
+  original model. The deck's cache and dictionary filing use that language.
+  A deck already handed to the reader and a Translate request keep their
+  original language instead of changing mid-session.
 
 ## Pronunciation (2026-10-24)
 

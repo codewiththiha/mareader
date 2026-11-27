@@ -75,7 +75,7 @@ fn a_word_asked_off_the_frame_streams_and_then_answers() {
         panic!("the first thing it sends is the answer so far");
     };
     assert_eq!(part.meaning, "the first words of it", "as it streamed");
-    let Got::Done(done) = got.rx.recv().expect("the worker sends the end") else {
+    let Got::Done(done, _) = got.rx.recv().expect("the worker sends the end") else {
         panic!("the last thing it sends is the answer, done");
     };
     let said = done.expect("the canned explainer answered");
@@ -98,7 +98,7 @@ fn an_explainer_that_fails_says_why_it_could_not_answer() {
     let first = got.rx.recv().expect("the worker sends as it goes");
     assert!(matches!(first, Got::Partial(_)), "it streams first");
     let last = got.rx.recv().expect("the worker sends the end");
-    let Got::Done(done) = last else {
+    let Got::Done(done, _) = last else {
         panic!("the last thing it sends is the answer, done");
     };
     let why = done.expect_err("the canned explainer failed");
@@ -123,7 +123,7 @@ fn the_answer_that_comes_back_is_within_the_card_s_bounds() {
         panic!("the first thing it sends is the answer so far");
     };
     assert_eq!(part.meaning, "the first words of it", "streamed as given");
-    let Got::Done(done) = got.rx.recv().expect("the worker sends the end") else {
+    let Got::Done(done, _) = got.rx.recv().expect("the worker sends the end") else {
         panic!("the last thing it sends is the answer, done");
     };
     let said = done.expect("the canned explainer answered");
@@ -446,3 +446,6 @@ fn an_answer_is_filed_in_the_language_it_was_asked_after_reconfiguration() {
     assert_eq!(filed[0].2, Some("French"));
     assert_eq!(state.language(), Some("Burmese"));
 }
+
+#[path = "asking_tests/replan.rs"]
+mod replan;

@@ -107,6 +107,18 @@ impl DeckJob {
             return Ok(moved);
         }
         if let Some(failure) = failed.take() {
+            if failure.why == Why::Language
+                && !self.handed
+                && let Some(writer) = self.writer.as_ref()
+                && let Some(cards) = writer.cards.compatible_snapshot()
+            {
+                self.writer = Some(Writer {
+                    cards,
+                    backs: writer.backs.clone(),
+                });
+                self.ask_backs(meanings)?;
+                return Ok(true);
+            }
             self.setup = setup_for(failure.why);
             return Err(failure.said());
         }

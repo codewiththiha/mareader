@@ -12,6 +12,12 @@ pub trait Explainer: Send + Sync {
         None
     }
 
+    /// Re-pins this request after a confirmed language-capability change.
+    /// Returns none when its original target is still usable.
+    fn compatible_snapshot(&self) -> Option<Arc<dyn Explainer>> {
+        None
+    }
+
     /// The answer; `partial` sees it fill in, when the answerer streams.
     fn explain(
         &self,

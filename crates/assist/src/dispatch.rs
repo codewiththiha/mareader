@@ -28,6 +28,8 @@ use crate::prompt::Prompt;
 use crate::running::{Event, Running, Say, Waker, start};
 use crate::slots::{Asker, Place, Slots, Ticket};
 
+mod compatible;
+
 /// A model in a route, and who answers for it.
 #[derive(Clone)]
 pub(crate) struct Seat {
@@ -59,7 +61,7 @@ impl Drop for Engine {
 }
 
 /// The settings last followed, and every task's route under them.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct Followed {
     pub ai: AiSettings,
     routes: Vec<(TaskId, Vec<Seat>)>,

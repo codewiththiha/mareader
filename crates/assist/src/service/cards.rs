@@ -49,6 +49,12 @@ impl CardWriter for AiCards {
         Some(Arc::new(Self(self.0.clone(), Some(self.now()))))
     }
 
+    fn compatible_snapshot(&self) -> Option<Arc<dyn CardWriter>> {
+        let now = self.now();
+        let next = self.0.compatible(&now, TaskId::StudyCards)?;
+        Some(Arc::new(Self(self.0.clone(), Some(next))))
+    }
+
     fn by(&self) -> String {
         self.now().by(TaskId::StudyCards)
     }

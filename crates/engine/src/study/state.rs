@@ -310,11 +310,21 @@ impl State {
             .explainer
             .snapshot()
             .unwrap_or_else(|| Arc::clone(&self.explainer));
-        let language = explainer.language();
         let hint = self.hints.get(&key).copied();
         self.partial.remove(&key);
         if (self.inline && !explainer.waits()) || cfg!(target_arch = "wasm32") {
-            match explainer.explain_by((word, context, hint), &|_| {}) {
+            let mut current = explainer;
+            let mut answer = current.explain_by((word, context, hint), &|_| {});
+            if answer
+                .as_ref()
+                .is_err_and(|f| f.why == mareader_study::Why::Language)
+                && let Some(next) = current.compatible_snapshot()
+            {
+                current = next;
+                answer = current.explain_by((word, context, hint), &|_| {});
+            }
+            let language = current.language();
+            match answer {
                 Ok((info, by)) => {
                     let info = info.clamped();
                     let word = word.to_owned();
@@ -343,13 +353,17 @@ impl State {
                         self.partial.insert(*key, info.clamped());
                         changed = true;
                     }
-                    Ok(Got::Done(answer)) => {
-                        done.push((*key, Some(answer), ask.language));
+                    Ok(Got::Reset) => {
+                        self.partial.remove(key);
+                        changed = true;
+                    }
+                    Ok(Got::Done(answer, language)) => {
+                        done.push((*key, Some(answer), language));
                         changed = true;
                         break;
                     }
                     Err(TryRecvError::Disconnected) => {
-                        done.push((*key, None, ask.language));
+                        done.push((*key, None, None));
                         changed = true;
                         break;
                     }

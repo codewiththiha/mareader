@@ -13,7 +13,8 @@ use crate::session::Waker;
 /// What a worker sends back: the answer so far, then the end.
 pub enum Got {
     Partial(WordInfo),
-    Done(Result<Said, Failure>),
+    Reset,
+    Done(Result<Said, Failure>, Option<&'static str>),
 }
 
 /// A finished answer, who gave it, and the word asked.
@@ -58,7 +59,6 @@ impl Said {
 /// A word being asked: what comes back, and the flag that stops it.
 pub struct Ask {
     pub rx: Receiver<Got>,
-    pub language: Option<&'static str>,
     stop: Arc<AtomicBool>,
 }
 
@@ -76,7 +76,6 @@ pub fn ask(
     (word, context, hint): (String, String, Option<Pos>),
 ) -> Ask {
     let (tx, rx) = channel();
-    let language = explainer.language();
     let stop = Arc::new(AtomicBool::new(false));
     let told = Arc::clone(&stop);
     std::thread::spawn(move || {
@@ -86,16 +85,29 @@ pub fn ask(
         };
         let stopped = || told.load(Ordering::Relaxed);
         let words = (word.as_str(), context.as_str(), hint);
-        let done = explainer.explain_until(words, &partial, &stopped);
+        let mut current = explainer;
+        let mut done = current.explain_until(words, &partial, &stopped);
+        if !stopped()
+            && done
+                .as_ref()
+                .is_err_and(|f| f.why == mareader_study::Why::Language)
+            && let Some(next) = current.compatible_snapshot()
+        {
+            let _ = tx.send(Got::Reset);
+            wake();
+            current = next;
+            done = current.explain_until(words, &partial, &stopped);
+        }
+        let language = current.language();
         let said = done.map(|(info, by)| Said {
             info: info.clamped(),
             by,
             word: word.clone(),
         });
-        let _ = tx.send(Got::Done(said));
+        let _ = tx.send(Got::Done(said, language));
         wake();
     });
-    Ask { rx, language, stop }
+    Ask { rx, stop }
 }
 
 #[cfg(test)]
