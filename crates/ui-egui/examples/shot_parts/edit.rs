@@ -23,6 +23,7 @@ pub struct Finish {
     wheel: Vec<[f32; 3]>,
     right_label: Option<String>,
     late_clicks: Vec<String>,
+    late_resize: Option<egui::Vec2>,
 }
 
 impl Finish {
@@ -44,6 +45,13 @@ impl Finish {
                     h.parse().map_err(|_| "resize height")?,
                 ));
             }
+            "late_resize" => {
+                let (w, h) = v.split_once('x').ok_or("late_resize=WxH")?;
+                self.late_resize = Some(egui::vec2(
+                    w.parse().map_err(|_| "late_resize width")?,
+                    h.parse().map_err(|_| "late_resize height")?,
+                ));
+            }
             "late_right" => self.right_label = Some(v.replace('_', " ")),
             "late_click" => self.late_clicks.push(v.replace('_', " ")),
             "late_wheel" => {
@@ -59,7 +67,7 @@ impl Finish {
     }
 
     /// Presses the keys, then runs exactly `frames`: `key=Space frames=8`.
-    pub fn press<S>(&self, harness: &mut Harness<'_, S>) {
+    pub fn press<S>(&self, harness: &mut Harness<'_, S>) -> Result<(), String> {
         if let Some(size) = self.resize {
             harness.set_size(size);
             harness.run_steps(15);
@@ -75,16 +83,22 @@ impl Finish {
             harness.run_steps(30);
         }
         if let Some(label) = &self.right_label {
-            if let Some(node) = harness.query_all_by_label(label).next() {
+            {
+                let node = harness.query_all_by_label(label).next().ok_or(format!("nothing named {label}"))?;
                 node.click_secondary();
-                harness.run_steps(6);
             }
+            harness.run_steps(6);
         }
         for label in &self.late_clicks {
-            if let Some(node) = harness.query_all_by_label(label).next() {
+            {
+                let node = harness.query_all_by_label(label).next().ok_or(format!("nothing named {label}"))?;
                 node.click();
-                harness.run_steps(8);
             }
+            harness.run_steps(8);
+        }
+        if let Some(size) = self.late_resize {
+            harness.set_size(size);
+            harness.run_steps(15);
         }
         for key in &self.keys {
             harness.key_press(*key);
@@ -95,6 +109,7 @@ impl Finish {
             harness.run_steps(1);
         }
         harness.run_steps(self.frames);
+        Ok(())
     }
 
     /// Outlines each marked box, then keeps only the crop.

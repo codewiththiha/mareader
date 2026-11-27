@@ -583,7 +583,7 @@ fn main() -> Result<(), String> {
         harness.hover_at(p);
         harness.run_steps(45);
     }
-    finish.press(&mut harness);
+    finish.press(&mut harness)?;
     let image = finish.touch(harness.render()?);
     image.save(&out).map_err(|e| e.to_string())?;
     println!("{out}");

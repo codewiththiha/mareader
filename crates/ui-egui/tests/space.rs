@@ -441,13 +441,14 @@ fn context_delete_one_book_and_merged_delete_all_books() {
 #[test]
 fn cards_and_list_have_context_selection() {
     for cards in [false, true] {
-        let mut h = words();
+        let mut h = reader(&[
+            ("books", "3"),
+            ("words", "demo"),
+            ("space", "words"),
+            ("space_view", if cards { "cards" } else { "list" }),
+        ]);
         h.get_by_label("Merged").click();
         h.run();
-        if cards {
-            h.get_by_label("Cards").click();
-            h.run();
-        }
         right_click(&mut h, "Details for gaunt");
         h.get_by_label("Select").click();
         h.run();
