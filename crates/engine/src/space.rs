@@ -21,7 +21,7 @@ pub use notes::{AiNoteGroup, Kept, NoteGroup, NoteRow, NotesFilter, NotesView, n
 pub use query::{date, day, detail_row, history, view};
 pub use room::Room;
 pub(crate) use seed::seed;
-pub(crate) use seed_ai_notes::seed_ai_notes;
+pub(crate) use seed_ai_notes::{seed_ai_at, seed_ai_notes};
 pub(crate) use seed_marks::seed_marks;
 pub use tally::{Tally, tally};
 

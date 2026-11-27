@@ -10,6 +10,14 @@ use crate::toast::Toast;
 use super::Session;
 
 impl Session {
+    /// A fixture saved at the reader's current selection, when one exists.
+    pub(crate) fn seed_selected_ai(&mut self) -> bool {
+        let pane = self.active();
+        let Some((book, (spot, text))) = self.book_in(pane).zip(self.documents().highlighted(pane)) else { return false; };
+        crate::space::seed_ai_at(self.library.model_mut(), book, spot, text, wall_ms());
+        true
+    }
+
     /// Toggle a selection's pin; defaults stay quiet if the book is loose.
     pub(super) fn skill_pin(&mut self, id: AskId, tell: bool) -> bool {
         if tell {
