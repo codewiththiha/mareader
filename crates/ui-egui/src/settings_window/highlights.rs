@@ -4,7 +4,7 @@ use egui::{Align2, Color32, FontId, Sense, Stroke, Ui, Vec2, vec2};
 use mareader_appearance::Rgb;
 use mareader_settings::{HighlightSettings, Pen, PickColor, Reserved};
 
-use super::{choice_row, divider, group, note, row, section};
+use super::{choice_row, divider, group, row, section, section_help};
 use crate::study::marks::pen_area;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent};
@@ -84,7 +84,14 @@ fn other_marks(ui: &mut Ui, h: &HighlightSettings, marks: Marks, out: &mut Comma
     if !marks.ai && !marks.shading {
         return;
     }
-    section(ui, "Other marks");
+    section_help(
+        ui,
+        "Other marks",
+        &[(
+            "",
+            "Highlights can't take these looks, so none passes for them.",
+        )],
+    );
     group(ui, |ui| {
         if marks.ai {
             let hint = "Words the AI Dictionary explained";
@@ -113,10 +120,6 @@ fn other_marks(ui: &mut Ui, h: &HighlightSettings, marks: Marks, out: &mut Comma
             }
         }
     });
-    note(
-        ui,
-        "Highlights can't take these looks, so none passes for them.",
-    );
 }
 
 /// A link to the tab where a mark's look is set.

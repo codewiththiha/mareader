@@ -2,7 +2,9 @@
 
 use super::downloads::muted;
 use super::voice_model::buttons;
-use super::{ROW_H, divider, fold_row, group, note, pick_row, row, section, switch_row};
+use super::{
+    ROW_H, divider, fold_row, group, note, pick_row, row, section, section_help, switch_row,
+};
 use crate::icons::Icon;
 use crate::platform::Platform;
 use crate::theme::Tokens;
@@ -41,12 +43,11 @@ pub fn tab(ui: &mut Ui, s: &mut ReadAloudSettings, v: &Voices<'_>, out: &mut Com
     engine(ui, s, v, out);
     voice(ui, s, &shown, v.booth, out);
     sound(ui, &shown, s, v.booth);
-    reading(ui, s);
     let keys =
         keymap::hint(v.platform, &Sent::Engine(Command::ToggleReadAloud)).unwrap_or_default();
     let tip =
         format!("Start or pause reading with {keys}, or right-click a page to read from there.");
-    note(ui, &tip);
+    reading(ui, s, &tip);
     memory(ui, &shown, s, v.shelf);
 }
 
@@ -500,8 +501,8 @@ fn percent(ui: &mut Ui, share: &mut f32, (lo, hi): (f32, f32), can: bool) {
     }
 }
 
-fn reading(ui: &mut Ui, s: &mut ReadAloudSettings) {
-    section(ui, "While reading");
+fn reading(ui: &mut Ui, s: &mut ReadAloudSettings, tip: &str) {
+    section_help(ui, "While reading", &[("", tip)]);
     group(ui, |ui| {
         let hint = "The page and scroll keep up with the words read";
         switch_row(ui, "Turn pages to follow", hint, &mut s.follow);

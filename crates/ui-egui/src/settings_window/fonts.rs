@@ -4,7 +4,7 @@ use mareader_settings::{AppearanceMenuStyle, BookDesign, ColumnAlign, FontFamily
 
 use mareader_library::{BookId, Design};
 
-use super::{disclosure, divider, group, note, row, section, switch_row};
+use super::{disclosure, divider, group, row, section, section_help, switch_row};
 use crate::ui_command::{Commands, Sent};
 use crate::widgets;
 use mareader_engine::command::Command;
@@ -182,11 +182,13 @@ fn page(ui: &mut Ui, t: &mut TextSettings) {
 
 /// A PDF's AI pages: type and spacing; its page keeps their measure.
 pub(super) fn ai_tab(ui: &mut Ui, t: &mut TextSettings) {
-    section(ui, "AI pages");
-    note(
+    section_help(
         ui,
-        "This PDF's AI pages are set in this type. A result never outgrows \
-        its page: past the room, its text shrinks to fit.",
+        "AI pages",
+        &[(
+            "",
+            "This PDF's AI pages are set in this type. A result never outgrows its page: past the room, its text shrinks to fit.",
+        )],
     );
     section(ui, "Typeface");
     group(ui, |ui| typeface(ui, t, false));

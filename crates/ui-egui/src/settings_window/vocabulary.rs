@@ -9,7 +9,7 @@ use mareader_speech::Stage;
 
 use super::downloads::{Buttons, muted, progress};
 use super::highlights::{palette, preview};
-use super::{choices, divider, flagged_row, group, note, row, section, switch_row};
+use super::{choices, divider, flagged_row, group, note, row, section, section_help, switch_row};
 use crate::dict::{count, megabytes};
 use crate::icons::Icon;
 use crate::theme::Tokens;
@@ -79,12 +79,15 @@ fn shading(ui: &mut Ui, study: &mut StudySettings, dictionary: &mut DictionarySe
             &mut dictionary.hover,
         );
     });
-    section(ui, "Shading look");
-    group(ui, |ui| look_rows(ui, study));
-    note(
+    section_help(
         ui,
-        "Shading keeps its own pen and colour, distinct from highlights.",
+        "Shading look",
+        &[(
+            "",
+            "Shading keeps its own pen and colour, distinct from highlights.",
+        )],
     );
+    group(ui, |ui| look_rows(ui, study));
 }
 
 /// Whether the cards show how words sound, which accent, written how.

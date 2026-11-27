@@ -3,7 +3,7 @@
 use super::model_picker::model_row;
 use super::provider_card::{add_key, provider_address};
 use super::study::count_row;
-use super::{divider, group, note, row, section};
+use super::{divider, group, note, row, section, section_help};
 use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
@@ -81,7 +81,14 @@ enum Act {
 fn models(ui: &mut Ui, ai: &mut AiSettings, live: Option<&Live<'_>>, out: &mut Commands) {
     let board = live.map(|l| l.board);
     let mut open = ui.data(|d| d.get_temp::<Option<u32>>(open_id()).flatten());
-    section(ui, "Models");
+    section_help(
+        ui,
+        "Models",
+        &[(
+            "",
+            "Each task asks the model chosen for it in the AI tab. Duplicate a model with another “At once” to give a task its own room.",
+        )],
+    );
     let mut act = None;
     let mut made = None;
     group(ui, |ui| {
@@ -137,11 +144,6 @@ fn models(ui: &mut Ui, ai: &mut AiSettings, live: Option<&Live<'_>>, out: &mut C
         }
     }
     ui.data_mut(|d| d.insert_temp(open_id(), open));
-    note(
-        ui,
-        "Each task asks the model chosen for it in the AI tab. Duplicate a \
-         model with another “At once” to give a task its own room.",
-    );
 }
 
 /// The tasks asking `id`, fallbacks included, as the row's pills.
