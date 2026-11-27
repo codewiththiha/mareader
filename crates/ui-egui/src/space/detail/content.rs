@@ -10,7 +10,7 @@ use crate::space::{look, sentence};
 use crate::theme::{self, Tokens};
 use crate::widgets;
 
-const SPLIT_FROM: f32 = 490.0;
+const SPLIT_FROM: f32 = 580.0;
 
 pub(super) fn show(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) -> bool {
     ui.set_width(ui.available_width());
@@ -30,14 +30,20 @@ fn header(ui: &mut Ui, detail: &Detail, t: &Tokens) -> bool {
     let mut close = false;
     ui.horizontal(|ui| {
         let width = (ui.available_width() - 38.0).max(0.0);
-        ui.allocate_ui_with_layout(vec2(width, 24.0), Layout::left_to_right(Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = 6.0;
-            ui.add(Icon::Book.image(ui, 15.0).tint(t.muted));
-            let books = detail.row.books.join("  ·  ");
-            let label = RichText::new(&books).font(theme::medium(t.text_small + 1.0)).color(t.muted);
-            ui.add(Label::new(label).truncate().selectable(false))
-                .on_hover_text(books);
-        });
+        ui.allocate_ui_with_layout(
+            vec2(width, 24.0),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                ui.add(Icon::Book.image(ui, 15.0).tint(t.muted));
+                let books = detail.row.books.join("  ·  ");
+                let label = RichText::new(&books)
+                    .font(theme::medium(t.text_small + 1.0))
+                    .color(t.muted);
+                ui.add(Label::new(label).truncate().selectable(false))
+                    .on_hover_text(books);
+            },
+        );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             close = widgets::small_icon_button(ui, Icon::Close, "Close word details").clicked();
         });
@@ -48,7 +54,9 @@ fn header(ui: &mut Ui, detail: &Detail, t: &Tokens) -> bool {
 fn body(ui: &mut Ui, detail: &Detail, t: &Tokens) {
     ui.spacing_mut().item_spacing.y = 7.0;
     ui.add_space(11.0);
-    let word = RichText::new(&detail.row.lemma).font(theme::semibold(t.text + 12.0)).color(t.ink);
+    let word = RichText::new(&detail.row.lemma)
+        .font(theme::semibold(t.text + 12.0))
+        .color(t.ink);
     ui.add(Label::new(word).wrap().selectable(false));
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 7.0;
@@ -56,7 +64,12 @@ fn body(ui: &mut Ui, detail: &Detail, t: &Tokens) {
             ui.label(RichText::new(pos).italics().color(t.muted));
         }
         look::level(ui, detail.row.band, t);
-        look::tag(ui, space::status_label(detail.row.status), look::status(detail.row.status, t), 6.0);
+        look::tag(
+            ui,
+            space::status_label(detail.row.status),
+            look::status(detail.row.status, t),
+            6.0,
+        );
         let by = match detail.row.by {
             LearnedBy::Proactive => "Card".to_owned(),
             LearnedBy::Reactive if detail.row.tries == 1 => "Recall · 1 try".to_owned(),
@@ -64,27 +77,43 @@ fn body(ui: &mut Ui, detail: &Detail, t: &Tokens) {
         };
         look::quiet(ui, &by, t.text_small, t);
     });
-    look::quiet(ui, &format!("Last met {}", space::date(detail.row.seen)), t.text_small, t);
+    look::quiet(
+        ui,
+        &format!("Last met {}", space::date(detail.row.seen)),
+        t.text_small,
+        t,
+    );
     ui.add_space(9.0);
     if ui.available_width() >= SPLIT_FROM {
         ui.columns(2, |columns| {
             if let [left, right] = columns {
                 core(left, detail, t);
-                extra(right, detail, t);
+                if has_recall(detail) {
+                    left.add_space(14.0);
+                    extra(left, detail, t);
+                    recall(right, detail, t);
+                } else {
+                    extra(right, detail, t);
+                }
             }
         });
     } else {
         core(ui, detail, t);
         ui.add_space(12.0);
+        recall(ui, detail, t);
+        ui.add_space(12.0);
         extra(ui, detail, t);
     }
-    recall(ui, detail, t);
     ui.add_space(10.0);
 }
 
 fn core(ui: &mut Ui, detail: &Detail, t: &Tokens) {
     look::caption(ui, "Meaning", t);
-    let meaning = if detail.row.meaning.is_empty() { "No saved meaning." } else { &detail.row.meaning };
+    let meaning = if detail.row.meaning.is_empty() {
+        "No saved meaning."
+    } else {
+        &detail.row.meaning
+    };
     ui.add(Label::new(RichText::new(meaning).size(t.text + 3.0).color(t.ink)).wrap());
     if !detail.row.context.is_empty() {
         ui.add_space(12.0);
@@ -97,7 +126,14 @@ fn core(ui: &mut Ui, detail: &Detail, t: &Tokens) {
                 ui.set_width(ui.available_width());
                 look::caption(ui, "In context", t);
                 ui.add_space(3.0);
-                ui.add(Label::new(sentence::highlight(&detail.row.context, &detail.row.form, t)).wrap());
+                ui.add(
+                    Label::new(sentence::highlight(
+                        &detail.row.context,
+                        &detail.row.form,
+                        t,
+                    ))
+                    .wrap(),
+                );
             });
     }
 }
@@ -108,12 +144,23 @@ fn extra(ui: &mut Ui, detail: &Detail, t: &Tokens) {
     let mut definitions = Vec::new();
     if let Some(entries) = &detail.entries {
         for entry in entries {
-            if !entry.definition.is_empty() && entry.definition != detail.row.meaning && !definitions.contains(&entry.definition) {
+            if !entry.definition.is_empty()
+                && entry.definition != detail.row.meaning
+                && !definitions.contains(&entry.definition)
+            {
                 definitions.push(entry.definition.clone());
             }
             if let Some(ai) = &entry.ai {
-                for value in &ai.synonyms { if !synonyms.contains(value) { synonyms.push(value.clone()); } }
-                for value in &ai.usages { if !examples.contains(value) { examples.push(value.clone()); } }
+                for value in &ai.synonyms {
+                    if !synonyms.contains(value) {
+                        synonyms.push(value.clone());
+                    }
+                }
+                for value in &ai.usages {
+                    if !examples.contains(value) {
+                        examples.push(value.clone());
+                    }
+                }
             }
         }
     }
@@ -121,24 +168,46 @@ fn extra(ui: &mut Ui, detail: &Detail, t: &Tokens) {
         look::caption(ui, "Synonyms", t);
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-            for word in &synonyms { synonym(ui, word, t); }
+            for word in &synonyms {
+                synonym(ui, word, t);
+            }
         });
     }
     if !examples.is_empty() {
-        if !synonyms.is_empty() { ui.add_space(10.0); }
+        if !synonyms.is_empty() {
+            ui.add_space(10.0);
+        }
         look::caption(ui, "Examples", t);
         for value in &examples {
-            ui.add(Label::new(RichText::new(value).font(theme::serif(t.text)).italics().color(t.ink)).wrap());
+            ui.add(
+                Label::new(
+                    RichText::new(value)
+                        .font(theme::serif(t.text))
+                        .italics()
+                        .color(t.ink),
+                )
+                .wrap(),
+            );
         }
     }
-    if !definitions.is_empty() {
-        if !synonyms.is_empty() || !examples.is_empty() { ui.add_space(10.0); }
+    let has_definitions = !definitions.is_empty();
+    if has_definitions {
+        if !synonyms.is_empty() || !examples.is_empty() {
+            ui.add_space(10.0);
+        }
         look::caption(ui, "Other meanings", t);
-        for value in definitions { ui.add(Label::new(value).wrap()); }
+        for value in definitions {
+            ui.add(Label::new(value).wrap());
+        }
     }
-    if synonyms.is_empty() && examples.is_empty() && detail.entries.is_some() {
+    if synonyms.is_empty() && examples.is_empty() && !has_definitions && detail.entries.is_some() {
         look::caption(ui, "More details", t);
-        look::quiet(ui, "No synonyms or examples available.", t.text_small + 1.0, t);
+        look::quiet(
+            ui,
+            "No synonyms or examples available.",
+            t.text_small + 1.0,
+            t,
+        );
     }
     if detail.entries.is_none() {
         look::quiet(ui, "Checking dictionaries…", t.text_small, t);
@@ -153,19 +222,29 @@ fn synonym(ui: &mut Ui, word: &str, t: &Tokens) {
         .corner_radius(7)
         .inner_margin(Margin::symmetric(9, 5))
         .show(ui, |ui| {
-            let text = RichText::new(word).font(theme::medium(t.text_small + 1.0)).color(t.accent);
+            let text = RichText::new(word)
+                .font(theme::medium(t.text_small + 1.0))
+                .color(t.accent);
             ui.add(Label::new(text).wrap().selectable(false));
         });
 }
 
+fn has_recall(detail: &Detail) -> bool {
+    !detail.history.is_empty() || detail.row.by == LearnedBy::Reactive
+}
+
 fn recall(ui: &mut Ui, detail: &Detail, t: &Tokens) {
-    if detail.history.is_empty() && detail.row.by != LearnedBy::Reactive { return; }
-    ui.add_space(14.0);
-    ui.separator();
-    ui.add_space(7.0);
+    if !has_recall(detail) {
+        return;
+    }
     look::caption(ui, "Your recall", t);
     if detail.history.is_empty() {
-        look::quiet(ui, "Answer text wasn't saved for earlier recalls.", t.text_small + 1.0, t);
+        look::quiet(
+            ui,
+            "Answer text wasn't saved for earlier recalls.",
+            t.text_small + 1.0,
+            t,
+        );
         return;
     }
     for run in &detail.history {
@@ -173,7 +252,9 @@ fn recall(ui: &mut Ui, detail: &Detail, t: &Tokens) {
         if !title.is_empty() {
             look::quiet(ui, &title, t.text_small, t);
         }
-        for answer in &run.answers { attempt(ui, answer, t); }
+        for answer in &run.answers {
+            attempt(ui, answer, t);
+        }
         ui.add_space(4.0);
     }
 }
@@ -199,7 +280,11 @@ fn attempt(ui: &mut Ui, answer: &RecallAnswer, t: &Tokens) {
     };
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
-        ui.label(RichText::new(&answer.verdict).font(theme::medium(t.text_small + 1.0)).color(color));
+        ui.label(
+            RichText::new(&answer.verdict)
+                .font(theme::medium(t.text_small + 1.0))
+                .color(color),
+        );
         ui.add(Label::new(RichText::new(&answer.text).color(t.ink)).wrap());
     });
     if !answer.feedback.is_empty() {
