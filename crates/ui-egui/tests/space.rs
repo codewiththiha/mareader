@@ -171,6 +171,27 @@ fn word_details_open_from_list_and_escape_returns_to_words() {
 }
 
 #[test]
+fn narrow_word_details_scroll_without_moving_the_header() {
+    let mut h = words();
+    h.get_by_label("Details for arcane").click();
+    h.run_steps(30);
+    h.set_size(egui::vec2(620.0, 680.0));
+    h.run_steps(15);
+    let before = h.get_by_label("Your recall").rect().top();
+    let close = h.get_by_label("Close word details").rect();
+    h.hover_at(egui::pos2(310.0, 400.0));
+    h.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -250.0),
+        phase: egui::TouchPhase::Move,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.run_steps(30);
+    assert!(h.get_by_label("Your recall").rect().top() < before - 20.0);
+    assert_eq!(h.get_by_label("Close word details").rect(), close);
+}
+
+#[test]
 fn word_details_open_from_cards_without_breaking_row_actions() {
     let mut h = reader(&[
         ("books", "3"),

@@ -156,7 +156,6 @@ impl Detail {
         }
         true
     }
-
 }
 
 #[cfg(test)]
@@ -193,7 +192,11 @@ mod tests {
         let mut word = row();
         word.books = vec!["One".into()];
         word.seen = 1_792_225_800_000;
-        let run = History { book: "One".into(), when: word.seen, answers: Vec::new() };
+        let run = History {
+            book: "One".into(),
+            when: word.seen,
+            answers: Vec::new(),
+        };
         let mut detail = Detail::new(word, vec![run.clone()], Rect::NOTHING, 0.0);
         assert_eq!(content::session_title(&detail, &run), "");
         detail.history.push(run.clone());
