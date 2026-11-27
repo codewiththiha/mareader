@@ -26,6 +26,7 @@ pub(super) fn row_hit(ui: &mut Ui, row: &Row, size: egui::Vec2) -> egui::Respons
     hit
 }
 
+#[allow(clippy::too_many_arguments)] // Hit handling shares the row renderer’s state.
 pub(super) fn pick(
     ui: &Ui,
     row: &Row,

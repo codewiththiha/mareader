@@ -91,6 +91,7 @@ fn heading(ui: &mut Ui, section: &Section, t: &Tokens) {
 }
 
 /// The rows on one raised sheet, a hairline between each.
+#[allow(clippy::too_many_arguments)] // Rendering carries the shared selection and return state.
 fn sheet(
     ui: &mut Ui,
     rows: &[Row],
@@ -124,6 +125,7 @@ fn sheet(
 }
 
 /// One row: the word, its meaning, its date and badges; then its actions.
+#[allow(clippy::too_many_arguments)] // Rendering carries the shared selection and return state.
 fn line(
     ui: &mut Ui,
     row: &Row,
@@ -206,6 +208,7 @@ fn line(
 /// The words as cards, as many to a line as the page has room for.
 ///
 /// A framed card is a child area, which a wrapping layout cannot move down.
+#[allow(clippy::too_many_arguments)] // Rendering carries the shared selection and return state.
 fn grid(
     ui: &mut Ui,
     rows: &[Row],
@@ -230,6 +233,7 @@ fn grid(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // Rendering carries the shared selection and return state.
 fn card(
     ui: &mut Ui,
     row: &Row,

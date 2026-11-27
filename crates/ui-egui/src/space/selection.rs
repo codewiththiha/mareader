@@ -78,8 +78,9 @@ impl Selection {
         widgets::context_menu(hit, |ui| {
             let can_open = !row.book_ids.is_empty();
             ui.add_enabled_ui(can_open, |ui| {
-                if widgets::menu_row(ui, Icon::Book, "Go to word in book", None, false).clicked() {
-                    if let Some(book) = row.book_ids.first().copied() {
+                if widgets::menu_row(ui, Icon::Book, "Go to word in book", None, false).clicked()
+                    && let Some(book) = row.book_ids.first().copied()
+                {
                         let quote = row
                             .met_at
                             .as_ref()
@@ -90,7 +91,6 @@ impl Selection {
                             quote,
                             row: row.key,
                         }));
-                    }
                 }
             });
             let label = if self.is_selected(row) {
