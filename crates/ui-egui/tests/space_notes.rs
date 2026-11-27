@@ -28,6 +28,7 @@ fn the_notes_card_opens_every_highlight_note_and_bookmark() {
     assert!(h.query_by_label("All 9").is_some());
     assert!(h.query_by_label("Notes 4").is_some());
     assert!(h.query_by_label("Bookmarks 2").is_some());
+    assert!(h.query_by_label("AI selection results 0").is_some());
     assert!(
         h.query_by_label("Open The mind is its own place.")
             .is_some()
@@ -96,7 +97,9 @@ fn ai_selection_answers_can_be_selected_and_deleted() {
     let mut h = reader(&[("books", "3"), ("ai_notes", "demo"), ("space", "notes")]);
     h.set_size(egui::vec2(1100.0, 900.0));
     h.run_steps(10);
-    assert!(h.query_by_label("AI selection results").is_some());
+    assert!(h.query_by_label("AI selection results 1").is_some());
+    h.get_by_label("AI selection results 1").click();
+    h.run_steps(4);
     let answer = h.get_by_label("A selected passage");
     answer.click_secondary();
     h.run_steps(4);
@@ -108,7 +111,8 @@ fn ai_selection_answers_can_be_selected_and_deleted() {
     h.run_steps(4);
     h.get_by_label("Are you sure?").click();
     h.run_steps(6);
-    assert!(h.query_by_label("AI selection results").is_none());
+    assert!(h.query_by_label("AI selection results 0").is_some());
+    assert!(h.query_by_label("A selected passage").is_none());
 }
 
 #[test]
@@ -143,4 +147,47 @@ fn note_navigation_returns_to_filtered_notes() -> Result<(), Box<dyn std::error:
             .is_none()
     );
     Ok(())
+}
+
+#[test]
+fn ai_tab_filters_marks_and_all_keeps_both_kinds() {
+    let mut h = reader(&[("books", "3"), ("marks", "demo"), ("ai_notes", "demo"), ("space", "notes")]);
+    h.set_size(egui::vec2(1280.0, 900.0));
+    h.run_steps(10);
+    assert!(h.query_by_label("AI selection results 1").is_some());
+    assert!(h.query_by_label("A selected passage").is_some());
+    assert!(h.query_by_label("Open The mind is its own place.").is_some());
+    h.get_by_label("AI selection results 1").click();
+    h.run_steps(5);
+    assert!(h.query_by_label("A selected passage").is_some());
+    assert!(h.query_by_label("Open The mind is its own place.").is_none());
+    h.get_by_label("All 10").click();
+    h.run_steps(5);
+    assert!(h.query_by_label("Open The mind is its own place.").is_some());
+    assert!(h.query_by_label("A selected passage").is_some());
+}
+
+#[test]
+fn both_room_sidebars_return_to_space_at_the_bottom() {
+    for room in ["notes", "words"] {
+        let mut h = marked(room);
+        let button = h.get_by_label("Back to Space");
+        let rect = button.rect();
+        assert!(rect.bottom() > 800.0, "{room} back button stays at the foot: {rect:?}");
+        button.click();
+        h.run_steps(5);
+        assert_eq!(h.state().session().room(), Room::Hub);
+    }
+}
+
+#[test]
+fn narrow_room_back_control_still_reaches_the_hub() {
+    for room in ["notes", "words"] {
+        let mut h = marked(room);
+        h.set_size(egui::vec2(400.0, 650.0));
+        h.run_steps(5);
+        h.get_by_label("Back to Space").click();
+        h.run_steps(5);
+        assert_eq!(h.state().session().room(), Room::Hub);
+    }
 }

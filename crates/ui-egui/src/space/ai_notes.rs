@@ -17,7 +17,6 @@ pub(super) fn show(
     if groups.is_empty() {
         return;
     }
-    heading(ui, t);
     for group in groups {
         ui.label(RichText::new(&group.title).strong().color(t.ink));
         for row in &group.rows {
@@ -89,14 +88,4 @@ pub(super) fn show(
 
 fn open(out: &mut Commands, book: mareader_library::BookId, id: mareader_library::AiSelectionId) {
     out.push(Sent::Ui(UiCommand::OpenSpaceAi { book, id }));
-}
-
-fn heading(ui: &mut Ui, t: &Tokens) {
-    ui.add_space(8.0);
-    ui.label(
-        RichText::new("AI selection results")
-            .strong()
-            .size(t.text + 3.0)
-            .color(t.ink),
-    );
 }

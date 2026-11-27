@@ -265,9 +265,9 @@ impl SpaceUi {
         }
         let view = space::view(lib, &self.filter);
         let filter = &mut self.filter;
-        let main = rail(ui, page, t, |ui| rail::show(ui, &view, filter, t));
+        let main = rail(ui, page, t, out, |ui| rail::show(ui, &view, filter, t));
         let col = column(page, main, MAX_W);
-        ui.scope_builder(down(col), |ui| self.word_column(ui, lib, &view, t, out))
+        ui.scope_builder(down(col), |ui| self.word_column(ui, lib, &view, main == page, t, out))
             .inner
     }
 
@@ -293,7 +293,7 @@ impl SpaceUi {
         }
         let view = space::notes(from.lib, &self.notes);
         let book = &mut self.notes.book;
-        let main = rail(ui, page, t, |ui| {
+        let main = rail(ui, page, t, out, |ui| {
             ui.spacing_mut().item_spacing.y = 10.0;
             look::caption(ui, "Books", t);
             rail::books(ui, (&view.books, view.total), book, t);
@@ -328,6 +328,7 @@ impl SpaceUi {
         ui: &mut Ui,
         lib: &Library,
         view: &View,
+        narrow: bool,
         t: &Tokens,
         out: &mut Commands,
     ) -> Option<Ask> {
@@ -337,7 +338,7 @@ impl SpaceUi {
         let mut picked = None;
         let scrolled = scroll.show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 14.0;
-            if look::back(ui, t) {
+            if narrow && look::back(ui, t) {
                 out.push(Sent::Engine(Command::ShowSpace(Room::Hub)));
             }
             let export = top::header(ui, &mut self.filter, t);
@@ -380,16 +381,20 @@ impl SpaceUi {
 
 /// The rail down `page`'s left, when wide enough, drawn by `draw`; what is
 /// left of the page.
-fn rail(ui: &mut Ui, page: Rect, t: &Tokens, draw: impl FnOnce(&mut Ui)) -> Rect {
+fn rail(ui: &mut Ui, page: Rect, t: &Tokens, out: &mut Commands, draw: impl FnOnce(&mut Ui)) -> Rect {
     if ui.max_rect().width() < RAIL_FROM {
         return page;
     }
     let rail = Rect::from_min_max(page.min, pos2(page.left() + RAIL_W, page.bottom()));
     ui.painter().rect_filled(rail, 0.0, t.card);
     let inner = rail.shrink2(vec2(20.0, 24.0));
-    let scroll = egui::ScrollArea::vertical().id_salt("space-rail");
-    ui.scope_builder(down(inner), |ui| {
-        scroll.show(ui, draw);
+    let split = (inner.bottom() - 42.0).max(inner.top());
+    let content = Rect::from_min_max(inner.min, pos2(inner.right(), split));
+    let scroll = egui::ScrollArea::vertical().id_salt("space-rail").auto_shrink([false, false]);
+    ui.scope_builder(down(content), |ui| { scroll.show(ui, draw); });
+    let footer = Rect::from_min_max(pos2(inner.left(), split), inner.max);
+    ui.scope_builder(down(footer), |ui| {
+        if look::back(ui, t) { out.push(Sent::Engine(Command::ShowSpace(Room::Hub))); }
     });
     page.with_min_x(rail.right())
 }

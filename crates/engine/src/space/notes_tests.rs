@@ -61,7 +61,7 @@ fn every_book_groups_its_notes_in_reading_order_and_explain_stays_out() {
     let want = ["Chapter 3", "fear is the mind-killer", "spice must flow"];
     assert_eq!(quotes(&view), want);
     assert_eq!((view.total, view.shown), (3, 3));
-    assert_eq!(view.counts, [3, 1, 1]);
+    assert_eq!(view.counts, [3, 1, 1, 0]);
     let pages: Vec<Option<usize>> = view.groups[1].rows.iter().map(|r| r.page).collect();
     assert_eq!(pages, [Some(3), Some(9)]);
 }
@@ -78,7 +78,7 @@ fn a_book_the_chips_and_the_search_narrow_the_rows() {
         quotes(&view),
         ["fear is the mind-killer", "spice must flow"]
     );
-    assert_eq!(view.counts, [2, 1, 0], "the chips count the book picked");
+    assert_eq!(view.counts, [2, 1, 0, 0], "the chips count the book picked");
     let rail: Vec<(&str, usize)> = view
         .books
         .iter()
@@ -113,7 +113,7 @@ fn the_seeded_marks_fill_three_books() {
     assert_eq!(seed_marks(&mut lib, 10_000_000_000), 9);
     let view = notes(&lib, &NotesFilter::default());
     assert_eq!(view.groups.len(), 3);
-    assert_eq!(view.counts, [9, 4, 2]);
+    assert_eq!(view.counts, [9, 4, 2, 0]);
 }
 
 #[test]
@@ -122,7 +122,11 @@ fn saved_ai_selections_appear_in_all_and_search() {
     seed_ai_notes(&mut lib, 8_000);
     let all = notes(&lib, &NotesFilter::default());
     assert_eq!(all.total, 4);
-    assert_eq!(all.counts[0], 4);
+    assert_eq!(all.counts, [4, 1, 1, 1]);
+    let ai = notes(&lib, &NotesFilter { kept: Kept::Ai, ..NotesFilter::default() });
+    assert_eq!(ai.shown, 1);
+    assert!(ai.groups.is_empty());
+    assert_eq!(ai.ai_groups.len(), 1);
     assert_eq!(all.ai_groups.iter().map(|g| g.rows.len()).sum::<usize>(), 1);
     let filter = NotesFilter {
         text: "passage".into(),

@@ -127,7 +127,7 @@ pub(super) fn link(ui: &mut Ui, words: egui::RichText, wrap: bool, label: &str) 
 
 /// The way back to Space's hub, over a tool's title; true when clicked.
 pub(super) fn back(ui: &mut Ui, t: &Tokens) -> bool {
-    let r = text_button(ui, (Icon::ChevronLeft, "Space"), BACK, t.muted);
+    let r = text_button(ui, (Icon::ChevronLeft, "Back to Space"), BACK, t.muted);
     r.clicked()
 }
 

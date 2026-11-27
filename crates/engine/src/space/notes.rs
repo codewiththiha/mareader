@@ -18,16 +18,18 @@ pub enum Kept {
     All,
     Notes,
     Bookmarks,
+    Ai,
 }
 
 impl Kept {
-    pub const ALL: [Kept; 3] = [Kept::All, Kept::Notes, Kept::Bookmarks];
+    pub const ALL: [Kept; 4] = [Kept::All, Kept::Notes, Kept::Bookmarks, Kept::Ai];
 
     pub fn label(self) -> &'static str {
         match self {
             Kept::All => "All",
             Kept::Notes => "Notes",
             Kept::Bookmarks => "Bookmarks",
+            Kept::Ai => "AI selection results",
         }
     }
 
@@ -36,6 +38,7 @@ impl Kept {
             Kept::All => true,
             Kept::Notes => mark.note.value.is_some(),
             Kept::Bookmarks => mark.kind == MarkKind::Bookmark,
+            Kept::Ai => false,
         }
     }
 }
@@ -90,7 +93,7 @@ pub struct NotesView {
     /// Every note in every book, for the rail's first row.
     pub total: usize,
     /// The chips' counts in the picked book, ignoring the search.
-    pub counts: [usize; 3],
+    pub counts: [usize; 4],
     /// The rows shown, after the chips and the search.
     pub shown: usize,
 }
@@ -123,10 +126,9 @@ pub fn notes(lib: &Library, filter: &NotesFilter) -> NotesView {
         .filter(|m| book.is_none_or(|b| m.book.value == b))
         .collect();
     let mut counts = Kept::ALL.map(|k| mine.iter().filter(|m| k.holds(m)).count());
-    counts[0] += saved
-        .iter()
-        .filter(|s| book.is_none_or(|id| id == s.book.value))
-        .count();
+    let ai_count = saved.iter().filter(|s| book.is_none_or(|id| id == s.book.value)).count();
+    counts[0] += ai_count;
+    counts[Kept::Ai as usize] = ai_count;
     let terms = query::terms(&filter.text);
     let kept = |m: &&Mark| {
         let note = m.note.value.as_deref().unwrap_or("");
@@ -134,7 +136,7 @@ pub fn notes(lib: &Library, filter: &NotesFilter) -> NotesView {
     };
     let rows: Vec<&Mark> = mine.into_iter().filter(kept).collect();
     let mut ai_groups = Vec::new();
-    if filter.kept == Kept::All {
+    if matches!(filter.kept, Kept::All | Kept::Ai) {
         for shelf in &books {
             if book.is_some_and(|id| id != shelf.id) {
                 continue;
