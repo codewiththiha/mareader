@@ -144,6 +144,7 @@ fn core(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) {
                 let limit = (height * 0.22).clamp(56.0, 104.0);
                 let scrolled = egui::ScrollArea::vertical()
                     .id_salt(("word-detail-context", detail.row.key))
+                    .auto_shrink([false, true])
                     .max_height(limit)
                     .min_scrolled_height(limit)
                     .show(ui, |ui| {
@@ -284,6 +285,7 @@ fn recall(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) {
             let limit = (height * 0.42).clamp(80.0, 200.0);
             let scrolled = egui::ScrollArea::vertical()
                 .id_salt(("word-detail-recall", detail.row.key))
+                .auto_shrink([false, true])
                 .max_height(limit)
                 .min_scrolled_height(limit)
                 .show(ui, |ui| {
