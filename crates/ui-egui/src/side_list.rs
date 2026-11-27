@@ -290,8 +290,7 @@ fn popup<'a>(
             pos2(parent.left(), resp.interact_rect.top()),
             pos2(parent.right(), resp.interact_rect.bottom()),
         );
-        // Choose by horizontal room alone. A tall list can be moved up to
-        // fit vertically without forcing a horizontally wrong alternative.
+        // Vertical overflow must not make a fitting submenu overlap its parent.
         let side = if right >= width + 4.0 || (left < width + 4.0 && right >= left) {
             egui::RectAlign::RIGHT_START
         } else {
