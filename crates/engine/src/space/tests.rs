@@ -188,6 +188,15 @@ fn groups_follow_the_first_row_and_levels_go_hardest_first() {
     };
     let bands = [6, 5, 4, 3].map(mareader_cefr::label);
     assert_eq!(labels(&view(&lib, &level)), bands);
+    let days = Filter {
+        group: Group::Day,
+        sort: Sort::Recent,
+        ..az(Scope::Books)
+    };
+    assert_eq!(
+        labels(&view(&lib, &days)),
+        ["Nov 16, 2026", "Oct 17, 2026"]
+    );
     let month = Filter {
         group: Group::Month,
         sort: Sort::Recent,

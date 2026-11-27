@@ -13,7 +13,13 @@ use crate::widgets;
 const LINE: &str = "Across every book. Memorized words are never shaded or carded again.";
 const SEARCH_W: f32 = 320.0;
 /// A merged row has many books, so it is never grouped by one.
-const MERGED_GROUPS: [Group; 4] = [Group::None, Group::Level, Group::Month, Group::Status];
+const MERGED_GROUPS: [Group; 5] = [
+    Group::None,
+    Group::Level,
+    Group::Day,
+    Group::Month,
+    Group::Status,
+];
 /// The toolbar's controls' height.
 const TOOL_H: f32 = 34.0;
 /// A stat card's height, and the room between cards.

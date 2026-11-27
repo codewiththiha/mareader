@@ -253,6 +253,10 @@ fn heading(group: Group, row: &Row) -> String {
         Group::None => String::new(),
         Group::Book => row.books.first().cloned().unwrap_or_default(),
         Group::Level => mareader_cefr::label(row.band).to_owned(),
+        Group::Day => {
+            let (year, _, _) = civil(row.seen / DAY_MS);
+            format!("{}, {year}", day(row.seen))
+        }
         Group::Month => month(row.seen),
         Group::Status => super::status_label(row.status).to_owned(),
     }

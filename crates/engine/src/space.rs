@@ -93,15 +93,17 @@ pub enum Group {
     #[default]
     Book,
     Level,
+    Day,
     Month,
     Status,
 }
 
 impl Group {
-    pub const ALL: [Group; 5] = [
+    pub const ALL: [Group; 6] = [
         Group::None,
         Group::Book,
         Group::Level,
+        Group::Day,
         Group::Month,
         Group::Status,
     ];
@@ -111,6 +113,7 @@ impl Group {
             Group::None => "None",
             Group::Book => "Book",
             Group::Level => "Level",
+            Group::Day => "Day",
             Group::Month => "Month",
             Group::Status => "Status",
         }
