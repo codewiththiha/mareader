@@ -131,7 +131,9 @@ pub fn notes(lib: &Library, filter: &NotesFilter) -> NotesView {
         .filter(|s| book.is_none_or(|id| id == s.book.value))
         .count();
     counts[0] += ai_count;
-    counts[Kept::Ai as usize] = ai_count;
+    if let Some(count) = counts.get_mut(Kept::Ai as usize) {
+        *count = ai_count;
+    }
     let terms = query::terms(&filter.text);
     let kept = |m: &&Mark| {
         let note = m.note.value.as_deref().unwrap_or("");
