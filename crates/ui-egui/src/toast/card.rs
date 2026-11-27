@@ -25,6 +25,7 @@ const CLOSE: f32 = 24.0;
 pub(super) const ISLAND_H: f32 = 28.0;
 pub(super) const ISLAND_PAD: f32 = 16.0;
 const ACTION_H: f32 = 26.0;
+const ARROW_W: f32 = 32.0;
 /// How soft the countdown's edge is, in points.
 const FEATHER: f32 = 64.0;
 /// The countdown's columns are this far apart, in points.
@@ -74,6 +75,7 @@ pub(super) fn measure(ctx: &Context, live: &Live, width: f32, t: &Tokens) -> Car
     let font = FontId::proportional(12.5);
     let swatch = look(live.toast.tone, t);
     let action = match live.toast.undo {
+        Some(_) if live.toast.label == mareader_engine::study_mode::OPEN_CARDS => ARROW_W,
         Some(_) => {
             let job = action_job(ctx, live, swatch.mark);
             let galley = ctx.fonts_mut(|f| f.layout_job(job));
@@ -269,6 +271,7 @@ pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &m
     pressed.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, true, live.toast.label)
     });
+    let pressed = pressed.on_hover_text(live.toast.label);
     if pressed.clicked() {
         out.push(Sent::Engine((**command).clone()));
         out.push(Sent::Ui(UiCommand::CloseToast(live.id)));
@@ -277,8 +280,12 @@ pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &m
 
 /// A compact action, confined to the toast's control rectangle.
 fn action_button(ui: &mut Ui, at: Rect, live: &Live, mark: Color32) -> egui::Response {
-    let button = Button::new(action_job(ui.ctx(), live, mark))
-        .wrap_mode(egui::TextWrapMode::Extend)
+    let button = if live.toast.label == mareader_engine::study_mode::OPEN_CARDS {
+        Button::image(Icon::ChevronRight.image(ui, 14.0).tint(mark))
+    } else {
+        Button::new(action_job(ui.ctx(), live, mark)).wrap_mode(egui::TextWrapMode::Extend)
+    };
+    let button = button
         .fill(look(live.toast.tone, &Tokens::get(ui.ctx())).soft)
         .stroke(Stroke::new(1.0, mark.gamma_multiply(0.35)))
         .corner_radius(7);
@@ -378,6 +385,9 @@ mod tests {
                 let card = measure(ui.ctx(), live, super::super::WIDTH, &t);
                 let rect = Rect::from_min_size(pos2(0.0, 0.0), Vec2::new(320.0, HEIGHT));
                 let target = action_at(rect, &card);
+                if label == mareader_engine::study_mode::OPEN_CARDS {
+                    assert_eq!(card.action, ARROW_W);
+                }
                 let shown = action_button(ui, target, live, t.ink).rect;
                 assert!(
                     target.contains_rect(shown),

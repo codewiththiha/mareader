@@ -59,6 +59,7 @@ mod study_mode;
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod study_recall;
 mod thumb_picks;
+mod toast_actions;
 mod updates;
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
