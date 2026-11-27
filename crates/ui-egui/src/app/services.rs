@@ -1,6 +1,8 @@
 //! Service polling and the effective dictionary language.
 
-use super::*;
+use egui::Context;
+
+use super::MareaderApp;
 
 impl MareaderApp {
     pub(super) fn poll_services(&mut self, ctx: &Context) {
