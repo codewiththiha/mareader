@@ -19,11 +19,16 @@ pub(super) fn show(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) -> boo
     ui.add_space(8.0);
     ui.separator();
     let used = ui.cursor().top() - before;
+    let compact = height < 460.0;
+    let footer = if compact { 19.0 } else { 0.0 };
     let scrolled = egui::ScrollArea::vertical()
         .id_salt("word-detail-scroll")
-        .max_height((height - used).max(0.0))
+        .max_height((height - used - footer).max(0.0))
         .show(ui, |ui| body(ui, detail, t, height));
     widgets::scroll_fades(ui, &scrolled, t.card);
+    if compact && scrolled.content_size.y > scrolled.inner_rect.height() + 1.0 {
+        look::quiet(ui, "Scroll for more details", t.text_small, t);
+    }
     close
 }
 

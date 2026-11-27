@@ -179,7 +179,7 @@ fn narrow_word_details_scroll_without_moving_the_header() {
     h.run_steps(15);
     let before = h.get_by_label("Correct").rect().top();
     let close = h.get_by_label("Close word details").rect();
-    h.hover_at(egui::pos2(30.0, 350.0));
+    h.hover_at(egui::pos2(40.0, 205.0));
     h.event(egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,
         delta: egui::vec2(0.0, -250.0),

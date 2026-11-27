@@ -128,7 +128,8 @@ impl Detail {
             );
             let content = ((progress - 0.45) / 0.4).clamp(0.0, 1.0);
             if content > 0.0 && rect.width() > 40.0 && rect.height() > 40.0 {
-                let inner = rect.shrink(20.0);
+                let margin = if screen.width() < 500.0 { 12.0 } else { 20.0 };
+                let inner = rect.shrink(margin);
                 ui.scope_builder(
                     UiBuilder::new()
                         .max_rect(inner)
