@@ -27,7 +27,7 @@ pub(super) fn show(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) -> boo
         .show(ui, |ui| body(ui, detail, t, height));
     widgets::scroll_fades(ui, &scrolled, t.card);
     if compact && scrolled.content_size.y > scrolled.inner_rect.height() + 1.0 {
-        look::quiet(ui, "Scroll for more details", t.text_small, t);
+        look::quiet(ui, "Scroll to browse details", t.text_small, t);
     }
     close
 }
@@ -96,14 +96,20 @@ fn body(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) {
     if ui.available_width() >= SPLIT_FROM {
         ui.columns(2, |columns| {
             if let [left, right] = columns {
-                core(left, detail, t, height);
-                if has_recall(detail) {
-                    left.add_space(14.0);
-                    extra(left, detail, t);
-                    recall(right, detail, t, height);
-                } else {
-                    extra(right, detail, t);
-                }
+                left.with_layout(Layout::top_down(Align::Min), |ui| {
+                    core(ui, detail, t, height);
+                    if has_recall(detail) {
+                        ui.add_space(14.0);
+                        extra(ui, detail, t);
+                    }
+                });
+                right.with_layout(Layout::top_down(Align::Min), |ui| {
+                    if has_recall(detail) {
+                        recall(ui, detail, t, height);
+                    } else {
+                        extra(ui, detail, t);
+                    }
+                });
             }
         });
     } else {
@@ -135,9 +141,11 @@ fn core(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) {
                 ui.set_width(ui.available_width());
                 look::caption(ui, "In context", t);
                 ui.add_space(3.0);
+                let limit = (height * 0.22).clamp(56.0, 104.0);
                 let scrolled = egui::ScrollArea::vertical()
                     .id_salt(("word-detail-context", detail.row.key))
-                    .max_height((height * 0.22).clamp(56.0, 104.0))
+                    .max_height(limit)
+                    .min_scrolled_height(limit)
                     .show(ui, |ui| {
                         ui.add(
                             Label::new(sentence::highlight(
@@ -151,7 +159,7 @@ fn core(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) {
                 widgets::scroll_fades(ui, &scrolled, t.paper);
                 keep_wheel_inside(ui, &scrolled);
                 if scrolled.content_size.y > scrolled.inner_rect.height() + 1.0 {
-                    look::quiet(ui, "Scroll to read more", t.text_small, t);
+                    look::quiet(ui, "Scroll to read", t.text_small, t);
                 }
             });
     }
@@ -273,9 +281,11 @@ fn recall(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) {
                 );
                 return;
             }
+            let limit = (height * 0.42).clamp(80.0, 200.0);
             let scrolled = egui::ScrollArea::vertical()
                 .id_salt(("word-detail-recall", detail.row.key))
-                .max_height((height * 0.42).clamp(80.0, 200.0))
+                .max_height(limit)
+                .min_scrolled_height(limit)
                 .show(ui, |ui| {
                     for run in &detail.history {
                         let title = session_title(detail, run);
@@ -291,7 +301,7 @@ fn recall(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) {
             widgets::scroll_fades(ui, &scrolled, t.paper);
             keep_wheel_inside(ui, &scrolled);
             if scrolled.content_size.y > scrolled.inner_rect.height() + 1.0 {
-                look::quiet(ui, "Scroll for more attempts", t.text_small, t);
+                look::quiet(ui, "Scroll to browse attempts", t.text_small, t);
             }
         });
 }

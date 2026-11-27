@@ -227,6 +227,28 @@ fn recall_scrolls_independently_of_the_word_and_header() {
 }
 
 #[test]
+fn narrow_recall_keeps_room_for_multiple_attempts_after_scrolling() {
+    let mut h = words();
+    h.get_by_label("Merged").click();
+    h.run();
+    h.get_by_label("Details for gaunt").click();
+    h.run_steps(30);
+    h.set_size(egui::vec2(420.0, 500.0));
+    h.run_steps(15);
+    h.hover_at(egui::pos2(40.0, 205.0));
+    h.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -350.0),
+        phase: egui::TouchPhase::Move,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.run_steps(30);
+    let second = h.query_all_by_label("Close").next().expect("second verdict").rect();
+    let hint = h.get_by_label("Scroll to browse attempts").rect();
+    assert!(second.bottom() < hint.top(), "the panel shows more than one attempt");
+}
+
+#[test]
 fn long_context_scrolls_without_moving_recall() {
     let mut h = words();
     h.get_by_label("Merged").click();
@@ -240,7 +262,7 @@ fn long_context_scrolls_without_moving_recall() {
         .next()
         .expect("attempt")
         .rect();
-    let hint = h.get_by_label("Scroll to read more").rect();
+    let hint = h.get_by_label("Scroll to read").rect();
     h.hover_at(hint.center() - egui::vec2(0.0, 60.0));
     h.event(egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,
