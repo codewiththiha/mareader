@@ -134,7 +134,7 @@ fn line(
                         let took = ui.allocate_ui_with_layout(size, lead, |ui| word(ui, row, t));
                         ui.add_space((word_w - took.response.rect.width()).max(0.0));
                         let meaning = RichText::new(&row.meaning).size(t.text + 1.0);
-                        ui.add(Label::new(meaning.color(t.ink)).truncate());
+                        ui.add(Label::new(meaning.color(t.ink)).truncate().selectable(false));
                     });
                 });
             });
@@ -197,7 +197,7 @@ fn card(
                 ui.spacing_mut().item_spacing.y = 8.0;
                 ui.horizontal(|ui| word(ui, row, t));
                 let meaning = RichText::new(&row.meaning).size(t.text + 1.0);
-                ui.add(Label::new(meaning.color(t.ink)).wrap());
+                ui.add(Label::new(meaning.color(t.ink)).wrap().selectable(false));
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
                     status(ui, row, t);

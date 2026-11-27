@@ -234,7 +234,9 @@ fn keep(model: &mut Library, book: BookId, recalling: &Recalling, done: Done, pr
     let class = recalling.class().map(|p| p.name().to_owned());
     let id = WordId::of(&word.key.lemma, class.as_deref());
     let status = if preserve {
-        model.word(id).map_or(status, |existing| existing.status.value)
+        model
+            .word(id)
+            .map_or(status, |existing| existing.status.value)
     } else {
         status
     };
