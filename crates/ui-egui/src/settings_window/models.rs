@@ -13,7 +13,6 @@ use mareader_assist::{AppleState, Board, Job, JobInfo, KeyRow, KeyState, Load, l
 use mareader_engine::command::Command;
 use mareader_settings::{AiSettings, ModelPreset, PageTask, PresetId, Provider, Skill, TaskId};
 use mareader_study::Failure;
-use mareader_study::mode::PER_REQUEST_MAX;
 
 mod jobs;
 
@@ -639,10 +638,6 @@ fn fields(ui: &mut Ui, p: &mut ModelPreset, board: Option<&Board>, out: &mut Com
     let tip = "Tasks this model may run at the same time";
     let max = ModelPreset::AT_ONCE_MAX;
     count_row(ui, ("At once", tip), &mut p.at_once, (1, max), ("", ""));
-    divider(ui);
-    let tip = "Words a study deck asks this model in one request; more are split";
-    let (n, max) = (&mut p.cards_per_request, PER_REQUEST_MAX);
-    count_row(ui, ("Cards per request", tip), n, (1, max), ("", ""));
 }
 
 /// Apple only where it runs; a switch forgets the old provider's model.

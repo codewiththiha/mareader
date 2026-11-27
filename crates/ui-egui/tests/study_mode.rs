@@ -263,3 +263,39 @@ fn turning_off_from_the_deck_asks_first() -> Out {
     assert!(!on(&h), "the answer turns study mode off");
     Ok(())
 }
+
+#[test]
+fn writer_sizes_belong_to_models_and_do_not_select_them() {
+    use mareader_settings::{Provider, TaskId};
+    let (words, packs) = shelves();
+    let mut h = levels_reader(words.path(), Some(packs.path()));
+    h.dial(|s| {
+        s.ai.presets.clear();
+        let first = s.ai.add_preset(Provider::Ollama, "first");
+        let second = s.ai.add_preset(Provider::Ollama, "second");
+        s.ai.tasks.choose(TaskId::Explain, Some(first));
+        s.ai.tasks.choose(TaskId::StudyCards, Some(first));
+        if let Some(p) = s.ai.presets.iter_mut().find(|p| p.id == second) {
+            p.name = "A very long second model name that should not widen this menu".into();
+        }
+    });
+    h.state_mut()
+        .queue(Sent::Engine(Command::OpenSettings(Tab::Study)));
+    h.run();
+    scroll(&mut h, 1000.0);
+    h.run();
+    h.get_by_label("Study cards").click();
+    h.run();
+    h.get_by_label("More cards per request for Ollama · first")
+        .click();
+    h.run();
+    assert!(
+        h.query_by_label("More cards per request for Ollama · first")
+            .is_some(),
+        "menu stays open"
+    );
+    let ai = &h.state().settings().ai;
+    assert_eq!(ai.presets[0].cards_per_request, 11);
+    assert_eq!(ai.presets[1].cards_per_request, 10);
+    assert_eq!(ai.tasks.choice(TaskId::StudyCards), Some(ai.presets[0].id));
+}

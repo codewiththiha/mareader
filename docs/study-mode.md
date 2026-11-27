@@ -157,7 +157,7 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   Explain's, in study's language. The sentence goes along only so the AI
   knows which word and class are meant; the meaning never retells the
   story. Each request carries about the model's **Cards per request**
-  (AI models, default 10): a deck is cut evenly into `words / limit`
+  (in the Study cards model menu, default 10, range 1–20): a deck is cut evenly into `words / limit`
   requests, rounded half up (`mode::chunks`), so with 10, 13 words go in
   one request, 15 in 8 and 7, and 32 in 11, 11 and 10. All are asked at
   once and the model's queue runs as many as its At once lets in (with

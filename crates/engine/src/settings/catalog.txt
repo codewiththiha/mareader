@@ -126,14 +126,13 @@ Study|Proactive|Lock pages outside the batches||
 Study|Proactive|Shade hard words while reading|cefr|
 Study|Proactive|Cards from|study deck source|conditional
 Study|AI|Cards in|study language|
-Study|AI|Study cards|ai cards model|
+Study|AI|Study cards|ai cards model cards per request batch size|
 Study|AI|Study judge|ai recall model|
 Study|Your words|Vocabs|word list|
 Models|Models|Models|ai model presets add edit provider|
 Models|Models|Name|model name|conditional
 Models|Models|Provider|model provider|conditional
 Models|Models|At once|model concurrency|conditional
-Models|Models|Cards per request|batch size|conditional
 Models|Providers|API keys|credentials provider|conditional
 Panes|Library panel|Library panel|click open split panes|
 Panes|Floating windows at the edge|Floating windows at the edge|parking sliver edge tab|

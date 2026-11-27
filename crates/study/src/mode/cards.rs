@@ -17,7 +17,7 @@ pub const SLOW_SECS: f64 = 7.0;
 /// Words one request carries unless the model's setting says otherwise.
 pub const PER_REQUEST: u8 = 10;
 /// Words one request carries at most, whatever the setting says.
-pub const PER_REQUEST_MAX: u8 = 30;
+pub const PER_REQUEST_MAX: u8 = 20;
 
 /// `n` words cut into requests of about `limit` each, sizes within one.
 ///

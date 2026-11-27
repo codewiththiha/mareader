@@ -18,6 +18,8 @@ use mareader_engine::command::Command;
 use mareader_engine::settings::Tab;
 
 mod busy;
+mod cards_picker;
+use cards_picker::cards_picker;
 
 const PICK_W: f32 = 240.0;
 const DICTIONARY: &str = TaskId::Explain.spec().label;
@@ -102,7 +104,11 @@ fn task_picker(ui: &mut Ui, ai: &mut AiSettings, task: TaskId) {
     let was = ai.tasks.choice(task);
     let mut chosen = was;
     let salt = format!("ai-{}-model", task.spec().label);
-    preset_picker(ui, &salt, &ai.presets, &mut chosen, &none);
+    if task == TaskId::StudyCards {
+        cards_picker(ui, &salt, &mut ai.presets, &mut chosen, &none);
+    } else {
+        preset_picker(ui, &salt, &ai.presets, &mut chosen, &none);
+    }
     if chosen != was {
         ai.tasks.choose(task, chosen);
     }
