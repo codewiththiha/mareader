@@ -60,9 +60,13 @@ pub(super) fn column(
             ui.spacing_mut().item_spacing.y = 2.0;
             let (first, second) = items.split_at(2);
             top::tab_row(ui, first, &mut filter.kept, t);
-            egui::ScrollArea::horizontal().id_salt("space-notes-tabs").show(ui, |ui| {
+            if ui.available_width() < 300.0 {
+                let (bookmarks, ai) = second.split_at(1);
+                top::tab_row(ui, bookmarks, &mut filter.kept, t);
+                top::tab_row(ui, ai, &mut filter.kept, t);
+            } else {
                 top::tab_row(ui, second, &mut filter.kept, t);
-            });
+            }
         });
     } else {
         top::tab_row(ui, &items, &mut filter.kept, t);
