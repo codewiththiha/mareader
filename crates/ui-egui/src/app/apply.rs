@@ -217,7 +217,7 @@ impl MareaderApp {
     /// Lookup replies in; when what dictionaries answer changed, the card
     /// asks again.
     fn dict_replies(&mut self, changed: bool, replies: Vec<mareader_dict::Reply>) {
-        self.ui.space.receive(&replies);
+        let changed = self.ui.space.receive(&replies) || changed;
         if let Some(why) = self.ui.space.take_delete_error() {
             self.ui.toasts.push(Toast::error(format!(
                 "Could not delete AI dictionary meanings: {why}"

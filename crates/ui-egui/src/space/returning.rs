@@ -14,22 +14,22 @@ pub(super) struct Return {
     pub row: u128,
     pub filter: Filter,
     pub cards: bool,
-    started: f64,
+    started: Option<f64>,
 }
 
 impl Return {
-    pub fn new(book: BookId, row: u128, filter: Filter, cards: bool, started: f64) -> Self {
+    pub fn new(book: BookId, row: u128, filter: Filter, cards: bool, _started: f64) -> Self {
         Self {
             book,
             row,
             filter,
             cards,
-            started,
+            started: None,
         }
     }
 }
 
-pub(super) fn show(ctx: &Context, back: &Return, pane: Rect, bar: bool) -> bool {
+pub(super) fn show(ctx: &Context, back: &mut Return, pane: Rect, bar: bool) -> bool {
     let t = Tokens::get(ctx);
     let now = ctx.input(|i| i.time);
     let bottom = pane.bottom()
@@ -44,9 +44,10 @@ pub(super) fn show(ctx: &Context, back: &Return, pane: Rect, bar: bool) -> bool 
     }
     let id = Id::new("vocab-return");
     let hovered = ctx.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
-    let expanded = now < back.started + 5.0 || hovered;
-    if now < back.started + 5.0 {
-        ctx.request_repaint_after_secs((back.started + 5.0 - now).min(0.25) as f32);
+    let started = *back.started.get_or_insert(now);
+    let expanded = now < started + 5.0 || hovered;
+    if now < started + 5.0 {
+        ctx.request_repaint_after_secs((started + 5.0 - now).min(0.25) as f32);
     }
     let shown = z_order::area(ctx, Tier::PageCard, id)
         .fixed_pos(pos)

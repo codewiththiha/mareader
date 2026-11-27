@@ -148,7 +148,7 @@ impl SpaceUi {
         rect: Rect,
         bar: bool,
     ) -> bool {
-        let Some(back) = &self.return_to else {
+        let Some(back) = &mut self.return_to else {
             return false;
         };
         if Some(back.book) != book || !returning::show(ctx, back, rect, bar) {
@@ -183,19 +183,22 @@ impl SpaceUi {
         }
     }
 
-    pub fn receive(&mut self, replies: &[mareader_dict::Reply]) {
+    pub fn receive(&mut self, replies: &[mareader_dict::Reply]) -> bool {
+        let mut changed = false;
         if let Some(reply) = replies
             .iter()
             .find(|r| Some(r.ticket) == self.delete_ticket)
         {
             self.delete_ticket = None;
             self.delete_error = reply.failed.clone();
+            changed = reply.failed.is_none();
         }
         if let Some(detail) = &mut self.detail {
             for reply in replies {
                 detail.receive(reply);
             }
         }
+        changed
     }
 
     /// Shows only `book` in `room`, every chip and search let go.

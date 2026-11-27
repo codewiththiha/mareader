@@ -334,7 +334,7 @@ fn pick(
         ui.scroll_to_rect(rect, Some(Align::Center));
         *pending = false;
     }
-    selection.menu(ui, &hit, row, scope, out);
+    selection.menu(&hit, row, scope, out);
     if hit.clicked() {
         if selection.active() {
             selection.toggle(row);

@@ -84,14 +84,20 @@ impl Finish {
         }
         if let Some(label) = &self.right_label {
             {
-                let node = harness.query_all_by_label(label).next().ok_or(format!("nothing named {label}"))?;
+                let node = harness
+                    .query_all_by_label(label)
+                    .next()
+                    .ok_or(format!("nothing named {label}"))?;
                 node.click_secondary();
             }
             harness.run_steps(6);
         }
         for label in &self.late_clicks {
             {
-                let node = harness.query_all_by_label(label).next().ok_or(format!("nothing named {label}"))?;
+                let node = harness
+                    .query_all_by_label(label)
+                    .next()
+                    .ok_or(format!("nothing named {label}"))?;
                 node.click();
             }
             harness.run_steps(8);

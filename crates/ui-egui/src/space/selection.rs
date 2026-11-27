@@ -76,7 +76,6 @@ impl Selection {
 
     pub fn menu(
         &mut self,
-        ui: &Ui,
         hit: &egui::Response,
         row: &Row,
         scope: Scope,
@@ -121,28 +120,28 @@ impl Selection {
                 self.ask_delete(row, scope);
             }
         });
-        let _ = ui;
     }
 
     pub fn toolbar(&mut self, ui: &mut Ui, scope: Scope, t: &Tokens) {
         if self.selected.is_empty() {
             return;
         }
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("{} selected", self.selected.len())).color(t.ink));
-            if ui.button("Clear selection").clicked() {
-                self.selected.clear();
-            }
-            if ui.button("Delete selected…").clicked() {
-                let rows = self.selected.values().cloned().collect();
-                self.delete = Some(Delete {
-                    rows,
-                    merged: scope == Scope::Merged,
-                    ai: false,
-                    sure: false,
+        egui::Frame::new()
+            .fill(t.accent_soft)
+            .corner_radius(t.radius)
+            .inner_margin(egui::Margin::symmetric(12, 6))
+            .show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new(format!("{} selected", self.selected.len())).color(t.ink));
+                    if super::look::text_button(ui, (Icon::Close, "Clear"), "Clear selection", t.ink).clicked() {
+                        self.selected.clear();
+                    }
+                    if super::look::text_button(ui, (Icon::Remove, "Delete selected"), "Delete selected…", t.danger).clicked() {
+                        let rows = self.selected.values().cloned().collect();
+                        self.delete = Some(Delete { rows, merged: scope == Scope::Merged, ai: false, sure: false });
+                    }
                 });
-            }
-        });
+            });
     }
 
     pub fn dialog(
@@ -167,29 +166,22 @@ impl Selection {
                 t,
             );
             ui.add_space(10.0);
-            let scope = if delete.merged {
-                "all linked books"
-            } else {
-                "the selected books"
+            let subject = match delete.rows.as_slice() {
+                [row] => format!("“{}”", row.lemma),
+                rows => format!("{} selected items", rows.len()),
             };
-            ui.label(format!(
-                "Remove {} item(s) and their learning history from {scope}. This cannot be undone.",
-                delete.rows.len()
-            ));
-            ui.add_space(8.0);
-            if ui
-                .checkbox(&mut delete.ai, "Also delete from AI dictionary")
-                .changed()
-            {
-                delete.sure = false;
-            }
-            ui.label(
-                RichText::new(
-                    "AI meanings in all languages for these words will also be removed if checked.",
-                )
-                .size(t.text_small)
-                .color(t.muted),
-            );
+            let scope = match (delete.merged, delete.rows.as_slice()) {
+                (true, _) => "all linked books".to_owned(),
+                (false, [row]) => row.books.first().cloned().unwrap_or_else(|| "the selected book".to_owned()),
+                (false, _) => "the selected books".to_owned(),
+            };
+            ui.add(egui::Label::new(format!(
+                "Remove {subject} and its study history from {scope}? This cannot be undone."
+            )).wrap());
+            ui.add_space(10.0);
+            let before = delete.ai;
+            modal::switch_card(ui, &mut delete.ai, "Also delete from AI dictionary", "Removes matching meanings in all languages, even if another book uses them.", Some(t.danger), t);
+            if before != delete.ai { delete.sure = false; }
             ui.add_space(12.0);
             modal::buttons(ui, |ui| {
                 let label = if delete.sure {
