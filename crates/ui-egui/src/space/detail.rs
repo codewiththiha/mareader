@@ -129,7 +129,8 @@ impl Detail {
                 Stroke::new(1.0, t.line),
                 egui::StrokeKind::Inside,
             );
-            if progress > 0.88 && !self.closing {
+            let content = ((progress - 0.45) / 0.4).clamp(0.0, 1.0);
+            if content > 0.0 && rect.width() > 40.0 && rect.height() > 40.0 {
                 let inner = rect.shrink(20.0);
                 ui.scope_builder(
                     UiBuilder::new()
@@ -137,16 +138,19 @@ impl Detail {
                         .layout(Layout::top_down(Align::Min)),
                     |ui| {
                         ui.set_clip_rect(inner);
-                        close |= self.content(ui, t, inner.height());
+                        ui.set_opacity(content);
+                        let pressed = self.content(ui, t, inner.height());
+                        close |= pressed && progress >= 0.95 && !self.closing;
                     },
                 );
-            } else {
+            }
+            if content < 1.0 {
                 ui.painter().text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
                     &self.row.lemma,
                     theme::medium(t.text + 4.0),
-                    t.ink,
+                    t.ink.gamma_multiply(1.0 - content),
                 );
             }
         });
@@ -192,6 +196,13 @@ impl Detail {
                 6.0,
             );
         });
+        let method = match self.row.by {
+            mareader_library::LearnedBy::Proactive => "Card".to_owned(),
+            mareader_library::LearnedBy::Reactive if self.row.tries == 1 => "Recall · 1 try".to_owned(),
+            mareader_library::LearnedBy::Reactive => format!("Recall · {} tries", self.row.tries),
+        };
+        let metadata = format!("{method}  ·  Last met {}", space::date(self.row.seen));
+        look::quiet(ui, &metadata, t.text_small, t);
         section(ui, "Meaning", t);
         let meaning = if self.row.meaning.is_empty() {
             "No saved meaning."
@@ -293,4 +304,53 @@ impl Detail {
 fn section(ui: &mut Ui, title: &str, t: &Tokens) {
     ui.add_space(12.0);
     look::caption(ui, title, t);
+}
+
+#[cfg(test)]
+mod tests {
+    use mareader_library::{LearnedBy, WordId, WordStatus};
+
+    use super::*;
+
+    fn row() -> Row {
+        Row {
+            key: 1,
+            word: WordId(1),
+            lemma: "quick".into(),
+            pos: None,
+            band: 4,
+            status: WordStatus::Learning,
+            meaning: "fast".into(),
+            context: "A quick walk.".into(),
+            form: "quick".into(),
+            books: Vec::new(),
+            book_ids: Vec::new(),
+            met_at: None,
+            seen: 0,
+            tries: 1,
+            by: LearnedBy::Reactive,
+            first_try: true,
+            synonyms: Vec::new(),
+            usages: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn motion_advances_without_a_dictionary_reply_and_ignores_stale_replies() {
+        let ctx = Context::default();
+        let source = Rect::from_min_size(egui::Pos2::ZERO, vec2(100.0, 40.0));
+        let mut detail = Detail::new(row(), Vec::new(), source, 0.0);
+        detail.ticket(Ticket(7));
+        assert!((detail.progress(&ctx, DURATION / 2.0) - 0.5).abs() < 0.001);
+        detail.receive(&Reply { ticket: Ticket(6), ..Reply::default() });
+        assert!(detail.entries.is_none());
+        assert_eq!(detail.progress(&ctx, DURATION), 1.0);
+        detail.receive(&Reply { ticket: Ticket(7), ..Reply::default() });
+        assert!(detail.entries.is_some());
+        detail.closing = true;
+        detail.started = DURATION;
+        assert!((detail.progress(&ctx, DURATION * 1.5) - 0.5).abs() < 0.001);
+        crate::motion::set(&ctx, &mareader_settings::MotionSettings::default(), true);
+        assert_eq!(detail.progress(&ctx, DURATION), 0.0);
+    }
 }
