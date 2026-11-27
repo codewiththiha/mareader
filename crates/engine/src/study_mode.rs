@@ -9,6 +9,7 @@ pub mod backs;
 pub mod counts;
 pub mod deck_job;
 pub mod known;
+pub(crate) mod location;
 pub mod open;
 pub mod recalling;
 pub mod run;

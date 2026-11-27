@@ -18,6 +18,9 @@ use mareader_workspace::PaneId;
 
 pub(crate) mod restore;
 
+/// Resolve a saved text span against the current book layout and source text.
+pub use restore::resolve;
+
 /// Page-menu asks kept at once; selections are retained for the session.
 pub const MOST: usize = 8;
 

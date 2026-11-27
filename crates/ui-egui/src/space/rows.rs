@@ -382,14 +382,9 @@ fn books(ui: &mut Ui, row: &Row, t: &Tokens, out: &mut Commands) {
         }
         let words = RichText::new(title).size(t.text_small).color(t.muted);
         if look::link(ui, words, false, &open_book(title)).clicked() {
-            let quote = row
-                .met_at
-                .as_ref()
-                .filter(|at| at.book == *id)
-                .map_or_else(|| row.form.clone(), |at| at.quote.clone());
             out.push(Sent::Ui(UiCommand::FindVocabInBook {
                 book: *id,
-                quote,
+                word: row.word,
                 row: row.key,
             }));
         }
@@ -423,10 +418,10 @@ fn sentence(ui: &mut Ui, row: &Row, t: &Tokens, out: &mut Commands) {
             }
             let link = link.on_hover_text(tip);
             if link.clicked() {
-                let (book, quote) = (at.book, at.quote.clone());
+                let book = at.book;
                 out.push(Sent::Ui(UiCommand::FindVocabInBook {
                     book,
-                    quote,
+                    word: row.word,
                     row: row.key,
                 }));
             }

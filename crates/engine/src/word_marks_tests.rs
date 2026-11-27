@@ -8,6 +8,7 @@ fn page(page: usize, chapter: Option<&str>, text: &str) -> Page {
         page,
         chapter: chapter.map(String::from),
         text: text.into(),
+        spots: HashMap::new(),
     }
 }
 
@@ -267,4 +268,45 @@ fn near_words_sit_under_the_word_that_found_them_once() {
     let md = render(&sheet(&words, &found, &langs), &list);
     assert!(md.contains("**ephemeral** · C1 · p. 3\n\n- *Not in the dictionary*\n- Near *ephemeral*:\n  - **ephemera** *(noun)* — Burmese: short-lived thing\n"), "{md}");
     assert!(!md.contains("↳"), "{md}");
+}
+
+#[test]
+fn extracted_occurrences_resolve_on_pdf_and_reflowed_epub() {
+    use mareader_reflow::Typography;
+    for (bytes, reflow) in [
+        (mareader_pdf::sample::pdf(2, "Sample"), false),
+        (mareader_epub::sample::epub(2, "Sample"), true),
+    ] {
+        let doc = Document::open(Arc::new(bytes.clone()), &Typography::default()).unwrap();
+        let all: Vec<usize> = (0..doc.page_count()).collect();
+        let pages = read(&doc, &all, true);
+        let found = pages
+            .iter()
+            .find_map(|page| {
+                crate::study_mode::sightings::words(&page.text)
+                    .into_iter()
+                    .find_map(|r| page.spots.get(&r.chars.start).map(|s| (r, *s)))
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "no words or anchors: reflow={reflow}, pages={}, samples={:?}",
+                    pages.len(),
+                    pages
+                        .iter()
+                        .map(|p| (&p.text, p.spots.len()))
+                        .take(2)
+                        .collect::<Vec<_>>()
+                )
+            });
+        assert!(crate::skills::resolve(&doc, found.1, &found.0.form).is_some());
+        assert!(crate::skills::resolve(&doc, found.1, "different").is_none());
+        if reflow {
+            let typo = Typography {
+                font_size: 24.0,
+                ..Typography::default()
+            };
+            let resized = Document::open(Arc::new(bytes), &typo).unwrap();
+            assert!(crate::skills::resolve(&resized, found.1, &found.0.form).is_some());
+        }
+    }
 }

@@ -341,14 +341,28 @@ impl MareaderApp {
                 self.apply(ctx, Sent::Engine(Command::OpenBook(book)));
                 self.ui.find_on_open = Some((book, quote, ctx.input(|i| i.time)));
             }
-            UiCommand::FindVocabInBook { book, quote, row } => {
+            UiCommand::FindVocabInBook { book, word, row } => {
                 self.ui
                     .space
                     .remember_return(book, row, ctx.input(|i| i.time));
-                self.apply(ctx, Sent::Engine(Command::OpenBook(book)));
-                if !quote.is_empty() {
-                    self.ui.find_on_open = Some((book, quote, ctx.input(|i| i.time)));
+                let sighting = self
+                    .session
+                    .library_model()
+                    .sightings_of(word)
+                    .into_iter()
+                    .find(|s| s.book.value == book)
+                    .and_then(|s| s.location().map(|spot| (spot, s.form.value.clone())));
+                self.ui.find.close();
+                self.ui.find_on_open = None;
+                self.ui.vocab_location = sighting.map(|(spot, source)| {
+                    super::vocab_location::Location::new(book, spot, source, ctx.input(|i| i.time))
+                });
+                if self.ui.vocab_location.is_none() {
+                    self.ui.toasts.push(Toast::warning(
+                        "This word has no reliable saved location. Study it again to save one.",
+                    ));
                 }
+                self.apply(ctx, Sent::Engine(Command::OpenBook(book)));
             }
             UiCommand::OpenSpaceNote { book, mark } => {
                 self.ui.space.remember_note_return(book, mark.0);

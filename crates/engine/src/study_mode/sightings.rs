@@ -19,6 +19,9 @@ pub struct Read {
     /// Lower case, as the levels are keyed.
     pub norm: String,
     pub sentence: String,
+    /// Character span in the extracted page and stable book location.
+    pub chars: std::ops::Range<usize>,
+    pub spot: Option<mareader_study::mode::Location>,
 }
 
 impl Read {
@@ -69,6 +72,8 @@ pub fn words(text: &str) -> Vec<Read> {
         }
         out.push(Read {
             norm: normalize(&form),
+            chars: span.start..span.end,
+            spot: None,
             sentence: clip(&chars, (from, to), span.start),
             form,
         });

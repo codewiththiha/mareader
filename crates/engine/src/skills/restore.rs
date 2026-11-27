@@ -101,7 +101,7 @@ fn restored(saved: &AiSelection, view: &View, id: AskId) -> Option<Ask> {
 }
 
 /// Resolve only bounded spans, and reject text changed under the saved spot.
-fn resolve(
+pub fn resolve(
     doc: &Document,
     spot: Spot,
     source: &str,

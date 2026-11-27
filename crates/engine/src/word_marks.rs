@@ -25,6 +25,8 @@ pub struct Page {
     /// The outline chapter it falls in, if the book has an outline.
     pub chapter: Option<String>,
     pub text: String,
+    /// Stable occurrence anchors keyed by extracted text character start.
+    pub spots: HashMap<usize, mareader_library::Spot>,
 }
 
 /// A hard word where it first shows.
@@ -53,7 +55,7 @@ pub fn keys(pages: &[Page]) -> Vec<String> {
 }
 
 /// The picked pages' text, each own page once, with its chapter.
-fn read(document: &Document, pages: &[usize]) -> Vec<Page> {
+fn read(document: &Document, pages: &[usize], anchors: bool) -> Vec<Page> {
     let outline = document.outline();
     let top = outline.iter().map(|e| e.depth).min();
     let chapters: Vec<_> = outline.iter().filter(|e| Some(e.depth) == top).collect();
@@ -66,7 +68,28 @@ fn read(document: &Document, pages: &[usize]) -> Vec<Page> {
         let Ok(layer) = document.text_layer(shown) else {
             continue;
         };
-        let (text, _) = crate::study::words::read(&layer);
+        let layer = Arc::new(layer);
+        let (text, index) = crate::study::words::read(&layer);
+        let mut spots = HashMap::new();
+        if anchors {
+            let source: String = text.iter().collect();
+            for word in mareader_cefr::tokenize(&source).into_iter().take(20_000) {
+                let first = index.get(word.start).and_then(|i| *i);
+                let last = word
+                    .end
+                    .checked_sub(1)
+                    .and_then(|i| index.get(i))
+                    .and_then(|i| *i);
+                if let (Some(first), Some(last)) = (first, last) {
+                    let sel =
+                        mareader_session::Selection::within(shown, first..last.saturating_add(1));
+                    if let Some(spot) = crate::study::words::span(sel, |_| Some(Arc::clone(&layer)))
+                    {
+                        spots.insert(word.start, spot);
+                    }
+                }
+            }
+        }
         let mut before = chapters.iter().filter(|e| e.page <= shown);
         let chapter = before.next_back().map(|e| e.title.trim().to_owned());
         let text = text.into_iter().collect();
@@ -74,6 +97,7 @@ fn read(document: &Document, pages: &[usize]) -> Vec<Page> {
             page,
             chapter,
             text,
+            spots,
         });
     }
     out
@@ -85,8 +109,11 @@ pub fn spawn(
     document: Arc<Document>,
     pages: Vec<usize>,
     inline: bool,
+    anchors: bool,
 ) -> Receiver<Vec<Page>> {
-    off_thread(wake, inline, "word-list", move || read(&document, &pages))
+    off_thread(wake, inline, "word-list", move || {
+        read(&document, &pages, anchors)
+    })
 }
 
 /// Runs `work` on a thread named `name`, or here when `inline`; then wakes.

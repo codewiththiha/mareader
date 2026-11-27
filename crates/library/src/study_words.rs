@@ -75,6 +75,9 @@ pub struct WordSighting {
     pub form: Field<String>,
     /// The book's sentence around it.
     pub context: Field<String>,
+    /// The occurrence that supplied form and context, absent in older data.
+    #[serde(default, skip_serializing_if = "Field::is_unset")]
+    pub spot: Field<Option<Spot>>,
     pub meaning: Field<String>,
     #[serde(default, skip_serializing_if = "Field::is_unset")]
     pub meaning_by: Field<Option<MeaningBy>>,
@@ -95,14 +98,24 @@ pub struct WordSighting {
     pub extra: Extra,
 }
 
+impl WordSighting {
+    /// A location is usable only when no newer context or form superseded it.
+    pub fn location(&self) -> Option<Spot> {
+        (self.spot.at >= self.form.at && self.spot.at >= self.context.at)
+            .then_some(self.spot.value)
+            .flatten()
+    }
+}
+
 /// A word studied in a book, to keep.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct NewWord {
     pub lemma: String,
     pub pos: Option<String>,
     pub band: u8,
     pub form: String,
     pub context: String,
+    pub spot: Option<Spot>,
     pub meaning: String,
     pub meaning_by: Option<MeaningBy>,
     pub by: LearnedBy,
@@ -243,6 +256,7 @@ impl Library {
                 by: Field::new(new.by, at),
                 form: Field::new(new.form, at),
                 context: Field::new(new.context, at),
+                spot: Field::new(new.spot, at),
                 meaning: Field::new(new.meaning, at),
                 meaning_by: Field::new(new.meaning_by, at),
                 tries: Field::new(new.tries, at),
@@ -263,6 +277,11 @@ impl Library {
             return;
         };
         if !new.context.is_empty() {
+            let changed = seen.form.value != new.form || seen.context.value != new.context;
+            let stale = seen.spot.at < seen.form.at || seen.spot.at < seen.context.at;
+            if changed || new.spot.is_some() && (stale || seen.spot.value != new.spot) {
+                seen.spot = Field::new(new.spot, at);
+            }
             put(&mut seen.form, new.form, at);
             put(&mut seen.context, new.context, at);
         }
@@ -424,6 +443,7 @@ impl Merge for WordSighting {
         self.by.merge(other.by);
         self.form.merge(other.form);
         self.context.merge(other.context);
+        self.spot.merge(other.spot);
         self.meaning.merge(other.meaning);
         self.meaning_by.merge(other.meaning_by);
         self.tries.merge(other.tries);
@@ -442,6 +462,7 @@ impl Merge for WordSighting {
             self.by.at,
             self.form.at,
             self.context.at,
+            self.spot.at,
             self.meaning.at,
             self.meaning_by.at,
             self.tries.at,

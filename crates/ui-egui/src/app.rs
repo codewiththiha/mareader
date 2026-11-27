@@ -19,6 +19,7 @@ mod space;
 mod study;
 mod study_mode;
 mod ui_state;
+mod vocab_location;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -217,6 +218,7 @@ impl MareaderApp {
                 sidebar: Sidebar::default(),
                 settings_window: SettingsWindow::default(),
                 find_on_open: None,
+                vocab_location: None,
                 find: FindBar::default(),
                 toasts: Toasts::default(),
                 study: StudyUi::default(),

@@ -121,6 +121,7 @@ mod tests {
             key: Key::new(word, None),
             form: word.to_owned(),
             sentence: String::new(),
+            spot: None,
             band: 5,
             count: 1,
             also: Vec::new(),

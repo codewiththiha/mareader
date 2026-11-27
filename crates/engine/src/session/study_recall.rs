@@ -78,7 +78,12 @@ impl Session {
         let asked = asked_at(&layer, page, chars).ok_or("No word is there.")?;
         let around = sentence_around(&layer, &asked.chars);
         let sentence = around.unwrap_or(asked.context);
-        let word = self.study_word(asked.word, sentence, page, asked.chars);
+        let spot = crate::study::words::span(
+            mareader_session::Selection::within(page, asked.chars.clone()),
+            |_| Some(Arc::clone(&layer)),
+        );
+        let mut word = self.study_word(asked.word, sentence, page, asked.chars);
+        word.spot = spot;
         let by = self.study_mode.judge().map(|j| j.by()).unwrap_or_default();
         let writer = self.study_mode.writer();
         let tag = self.vocab.ask_tag(&word.form, &word.sentence);
@@ -104,6 +109,8 @@ impl Session {
             norm: mareader_cefr::normalize(&form),
             form,
             sentence,
+            chars: 0..0,
+            spot: None,
         };
         let keys = read.keys();
         let found: HashMap<String, u8> = keys
@@ -120,6 +127,7 @@ impl Session {
             band,
             page,
             chars,
+            spot: None,
         }
     }
 
@@ -250,6 +258,7 @@ fn keep(model: &mut Library, book: BookId, recalling: &Recalling, done: Done, pr
         band: word.band,
         form: word.form.clone(),
         context: word.sentence.clone(),
+        spot: word.spot,
         meaning_by: meaning.as_deref().and_then(|m| said(m, MeaningBy::Ai)),
         meaning: meaning.unwrap_or_default(),
         by: LearnedBy::Reactive,

@@ -70,6 +70,7 @@ fn carded(level: u8) -> Vec<(String, String)> {
         page: 0,
         chapter: None,
         text: TEXT.to_owned(),
+        spots: Default::default(),
     };
     job.take_pages(&[page]);
     job.bands = BANDS.iter().map(|(k, b)| ((*k).to_owned(), *b)).collect();
@@ -202,6 +203,7 @@ fn ai_deck(n: usize, writer: &Writer) -> DeckJob {
             key: Key::new(format!("word{i}"), (i % 2 == 0).then_some(Pos::Noun)),
             form: format!("word{i}"),
             sentence: format!("The word{i} here."),
+            spot: None,
             band: 5,
             count: 1,
             also: Vec::new(),
@@ -311,6 +313,11 @@ fn a_card_the_ai_dictionary_keeps_by_lemma_and_class_is_not_written() {
         ..Filed::default()
     };
     let mut job = ai_deck(4, &writer);
+    let location = mareader_study::mode::Location::Chars {
+        from: [2, 10],
+        to: [2, 15],
+    };
+    job.deck.cards[0].spot = Some(location);
     job.ask_backs(&mut filed).unwrap();
     assert_eq!(filed.asked, ["word0", "word2"], "only cards with a class");
     assert!(counting.sizes.lock().unwrap().is_empty(), "none yet");
@@ -318,9 +325,19 @@ fn a_card_the_ai_dictionary_keeps_by_lemma_and_class_is_not_written() {
     assert_eq!(*counting.sizes.lock().unwrap(), [3], "word2 is a noun here");
     let reused = job.written[0].clone().unwrap();
     assert_eq!(reused.meaning, "kept Word0");
+    assert_eq!(
+        job.deck.cards[0].spot,
+        Some(location),
+        "reuse keeps this book's location"
+    );
     assert_eq!(reused.synonyms.len(), 3, "as many as a written back");
     assert_eq!(reused.usage, "One.");
     assert_eq!(job.writing(&mut filed), Ok(true));
+    assert_eq!(
+        job.settling[0].0.card.spot,
+        Some(location),
+        "the shown reused card retains its location"
+    );
     assert_eq!(filed.saved.len(), 1, "only word2 was written with a class");
 }
 

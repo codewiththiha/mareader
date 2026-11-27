@@ -56,6 +56,7 @@ fn shown(lemma: &str) -> Shown {
         key: Key::new(lemma, None),
         form: lemma.to_owned(),
         sentence: String::new(),
+        spot: None,
         band: 5,
         count: 1,
         also: Vec::new(),

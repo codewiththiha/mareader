@@ -30,6 +30,15 @@ impl Session {
         self.library.model()
     }
 
+    /// Records a word directly in the library, for test fixtures.
+    pub fn library_seed_word(
+        &mut self,
+        book: BookId,
+        word: mareader_library::NewWord,
+    ) -> Option<mareader_library::WordId> {
+        self.library.model_mut().record_word(book, word, wall_ms())
+    }
+
     /// Creates a shelf directly on the library model, for test fixtures.
     pub fn library_seed_shelf(
         &mut self,

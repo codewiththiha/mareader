@@ -459,6 +459,7 @@ fn record(model: &mut Library, book: BookId, shown: &Shown, status: WordStatus) 
         band: card.band,
         form: card.form.clone(),
         context: card.sentence.clone(),
+        spot: card.spot.map(crate::study_mode::location::to_spot),
         meaning: shown.meaning.clone(),
         meaning_by: shown.by,
         synonyms: shown.synonyms.clone(),
@@ -472,3 +473,7 @@ fn record(model: &mut Library, book: BookId, shown: &Shown, status: WordStatus) 
     };
     model.record_word(book, word, wall_ms());
 }
+
+#[cfg(test)]
+#[path = "study_mode_location_tests.rs"]
+mod location_tests;

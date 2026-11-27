@@ -10,6 +10,15 @@ use std::collections::{HashMap, HashSet};
 use super::keys::Key;
 use crate::class::Pos;
 
+/// A word's stable span in its source document.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Location {
+    /// Page and character indices in a fixed-layout document.
+    Chars { from: [usize; 2], to: [usize; 2] },
+    /// Block and byte offsets in a reflowable document.
+    Blocks { from: [usize; 2], to: [usize; 2] },
+}
+
 /// A hard word where it stands, given in reading order.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sighting {
@@ -20,6 +29,8 @@ pub struct Sighting {
     pub band: u8,
     /// The book's own sentence around it.
     pub sentence: String,
+    /// The first occurrence in its book, independent of its meaning.
+    pub spot: Option<Location>,
 }
 
 /// One word to learn before the batch.
@@ -29,6 +40,7 @@ pub struct Card {
     /// The form and sentence of its first sighting.
     pub form: String,
     pub sentence: String,
+    pub spot: Option<Location>,
     pub band: u8,
     /// Sightings in these pages.
     pub count: usize,
@@ -88,6 +100,7 @@ pub fn build(
             key: s.key,
             form: s.form,
             sentence: s.sentence,
+            spot: s.spot,
             band: s.band,
             count: 1,
             also: Vec::new(),
@@ -187,11 +200,31 @@ mod tests {
             form: lemma.to_owned(),
             band,
             sentence: format!("A {lemma} here."),
+            spot: None,
         }
     }
 
     fn names(d: &Deck) -> Vec<String> {
         d.cards.iter().map(|c| c.key.id()).collect()
+    }
+
+    #[test]
+    fn repeated_word_keeps_the_first_occurrence() {
+        let mut first = seen("lintel", Pos::Noun, 5);
+        let mut second = first.clone();
+        let a = Location::Chars {
+            from: [1, 2],
+            to: [1, 8],
+        };
+        let b = Location::Chars {
+            from: [2, 4],
+            to: [2, 10],
+        };
+        first.spot = Some(a);
+        second.spot = Some(b);
+        let deck = build([first, second], 1, |_| false, 20);
+        assert_eq!(deck.cards[0].spot, Some(a));
+        assert_eq!(deck.cards[0].count, 2);
     }
 
     #[test]

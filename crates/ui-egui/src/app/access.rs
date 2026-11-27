@@ -78,6 +78,15 @@ impl MareaderApp {
         LibraryView::new(self.session.library(), self.ui.library.covers())
     }
 
+    /// Records a word directly in the library, for test fixtures.
+    pub fn seed_library_word(
+        &mut self,
+        book: mareader_library::BookId,
+        word: mareader_library::NewWord,
+    ) -> Option<mareader_library::WordId> {
+        self.session.library_seed_word(book, word)
+    }
+
     /// Creates a shelf directly on the library model, for test fixtures.
     pub fn seed_library_shelf(
         &mut self,

@@ -89,6 +89,7 @@ pub(crate) fn seed(model: &mut Library, now_ms: u64) -> usize {
             band,
             form: lemma.to_owned(),
             context: context.to_owned(),
+            spot: None,
             meaning: meaning.to_owned(),
             meaning_by: WRITERS.get(i % WRITERS.len()).copied().flatten(),
             by: if recalled {

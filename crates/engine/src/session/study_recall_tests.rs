@@ -32,6 +32,10 @@ fn keeping_and_dismissing_sessions_preserves_answers_and_existing_status() {
             band: 4,
             page: 0,
             chars: 2..7,
+            spot: Some(mareader_library::Spot::Blocks {
+                from: [1, 2],
+                to: [1, 7],
+            }),
         },
         None,
         String::new(),
@@ -62,6 +66,13 @@ fn keeping_and_dismissing_sessions_preserves_answers_and_existing_status() {
     keep(&mut lib, book, &recall, dismissed, true);
     let seen = lib.sightings(book).into_iter().next().unwrap();
     assert_eq!(seen.recall_history.sessions.len(), 2);
+    assert_eq!(
+        seen.location(),
+        Some(mareader_library::Spot::Blocks {
+            from: [1, 2],
+            to: [1, 7]
+        })
+    );
     assert_eq!(seen.synonyms.value, ["brisk"]);
     assert_eq!(seen.usages.value, ["A quick reply."]);
     assert_eq!(

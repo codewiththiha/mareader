@@ -22,7 +22,7 @@ pub use cards::{
     Answer, CardJob, CardWriter, PER_REQUEST, PER_REQUEST_MAX, Practice, SLOW_SECS, Wanted,
     Written, chunks, practice_back, request_chunks,
 };
-pub use deck::{Allowance, Card, Deck, MOST_CARDS, Sighting, also_as, build};
+pub use deck::{Allowance, Card, Deck, Location, MOST_CARDS, Sighting, also_as, build};
 pub use judge::{Attempt, Judge, JudgeJob, Judged, Judgement, practice_verdict};
 pub use keys::{Key, bases, lemma, proper};
 pub use recall::{Done, MAX_TRIES, Outcome, Phase, Recall, Verdict};

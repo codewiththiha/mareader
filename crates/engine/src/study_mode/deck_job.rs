@@ -176,7 +176,7 @@ pub struct DeckJob {
 impl DeckJob {
     pub fn new(wake: Waker, ask: Ask) -> Self {
         let inline = ask.pages.len() <= INLINE || ask.document.is_reflowable();
-        let rx = word_marks::spawn(wake, ask.document, ask.pages, inline);
+        let rx = word_marks::spawn(wake, ask.document, ask.pages, inline, true);
         Self {
             level: ask.level,
             max: ask.max,
@@ -266,7 +266,16 @@ impl DeckJob {
     }
 
     fn take_pages(&mut self, pages: &[Page]) {
-        let read = pages.iter().flat_map(|p| sightings::words(&p.text));
+        let read = pages.iter().flat_map(|p| {
+            sightings::words(&p.text).into_iter().map(|mut word| {
+                word.spot = p
+                    .spots
+                    .get(&word.chars.start)
+                    .copied()
+                    .and_then(super::location::from_spot);
+                word
+            })
+        });
         self.read = read.take(READ_CAP).collect();
         let mut seen = HashSet::new();
         let keys = self.read.iter().flat_map(Read::keys);
@@ -388,6 +397,7 @@ impl DeckJob {
                 form: r.form.clone(),
                 band: h.band,
                 sentence: r.sentence.clone(),
+                spot: r.spot,
             })
         });
         let known = &self.known;

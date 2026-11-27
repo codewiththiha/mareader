@@ -3,6 +3,7 @@
 //! its sentence opening the book there, and a library card's counts.
 
 mod actions;
+mod locations;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
@@ -110,7 +111,7 @@ fn escape_goes_back_to_the_hub_then_the_library() {
 }
 
 #[test]
-fn a_rows_sentence_opens_its_book_and_finds_it_there() -> Out {
+fn a_legacy_rows_sentence_opens_its_book_without_search() -> Out {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let raven = dir.join("../epub/tests/books/the-raven-gutenberg-17192.epub");
     let raven = raven.canonicalize()?;
@@ -128,8 +129,10 @@ fn a_rows_sentence_opens_its_book_and_finds_it_there() -> Out {
     }
     assert_eq!(h.state().route(), Route::Reader, "back in the book");
     let find = h.state().find();
-    assert!(find.is_open(), "the find bar looks for the sentence");
-    assert_eq!(find.query(), "ducked beneath the lintel of the low");
+    assert!(
+        !find.is_open(),
+        "an unanchored legacy row must not search for a guess"
+    );
     Ok(())
 }
 

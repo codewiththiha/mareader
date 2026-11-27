@@ -12,6 +12,7 @@ impl MareaderApp {
         self.show_study_mode(ctx, out);
         self.show_page_ai(ctx, out, &sounds);
         self.show_skills(ctx, out);
+        self.show_vocab_location(ctx);
         self.show_activity(ctx, out);
         if self.route() == Route::Reader {
             let pane = self.active();

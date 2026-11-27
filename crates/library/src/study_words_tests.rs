@@ -135,11 +135,22 @@ fn the_gate_is_kept_with_the_place_and_travels() {
     };
     assert!(lib.set_unlocked(one, Some(gate), 2_000));
     assert!(!lib.set_unlocked(one, Some(gate), 2_100), "unchanged");
-    lib.record_word(one, word("lintel", WordStatus::Learning), 2_200);
+    let mut occurrence = word("lintel", WordStatus::Learning);
+    let spot = Spot::Blocks {
+        from: [3, 12],
+        to: [3, 19],
+    };
+    occurrence.spot = Some(spot);
+    lib.record_word(one, occurrence, 2_200);
     save(&folder, &mut lib);
     let mut back = folder.load(A).library;
     assert_eq!(back.unlocked(one), Some(&gate));
     assert_eq!(back.sightings(one).len(), 1);
+    assert_eq!(
+        back.sightings(one)[0].location(),
+        Some(spot),
+        "survives restart"
+    );
     let mut other = Library::new(B);
     book(&mut other, "/elsewhere/a.epub", 1);
     back.mark_all();
@@ -147,6 +158,11 @@ fn the_gate_is_kept_with_the_place_and_travels() {
     assert!(rows.iter().any(|r| r.kind == Kind::Sighting));
     other.absorb(rows, 2_500);
     assert_eq!(other.sightings(one).len(), 1);
+    assert_eq!(
+        other.sightings(one)[0].location(),
+        Some(spot),
+        "sync carries the spot"
+    );
     assert_eq!(status(&other, "lintel"), Some(WordStatus::Learning));
 }
 
@@ -302,4 +318,46 @@ fn removing_one_occurrence_tombstones_its_answers_on_sync() {
     assert!(!old.alive.value);
     assert!(old.recall_history.sessions.is_empty());
     assert!(old.context.value.is_empty());
+}
+
+#[test]
+fn locations_are_per_book_and_old_rows_have_no_location() {
+    let mut lib = Library::new(A);
+    let (one, two) = (book(&mut lib, "/a.epub", 1), book(&mut lib, "/b.epub", 2));
+    let a = Spot::Blocks {
+        from: [2, 4],
+        to: [2, 11],
+    };
+    let b = Spot::Blocks {
+        from: [8, 1],
+        to: [8, 8],
+    };
+    let mut first = word("lintel", WordStatus::Learning);
+    first.spot = Some(a);
+    let id = lib.record_word(one, first.clone(), 2_000).unwrap();
+    first.spot = Some(b);
+    first.meaning_by = Some(crate::MeaningBy::Ai);
+    lib.record_word(two, first.clone(), 2_100);
+    assert_eq!(lib.sightings(one)[0].spot.value, Some(a));
+    assert_eq!(lib.sightings(two)[0].spot.value, Some(b));
+    let mut raw = serde_json::to_value(lib.sightings(one)[0]).unwrap();
+    raw.as_object_mut().unwrap().remove("spot");
+    let old: crate::WordSighting = serde_json::from_value(raw).unwrap();
+    assert_eq!(old.spot.value, None);
+    let mut stale = lib.sightings(one)[0].clone();
+    stale.context.at = lib.sightings(two)[0].context.at;
+    assert_eq!(
+        stale.location(),
+        None,
+        "a newer context from an old client invalidates the spot"
+    );
+    let mut without = word("lintel", WordStatus::Learning);
+    without.context = "Different lintels.".into();
+    lib.record_word(one, without, 3_000);
+    assert_eq!(
+        lib.sightings(one)[0].spot.value,
+        None,
+        "do not retain a stale place"
+    );
+    assert_eq!(lib.sightings_of(id).len(), 2);
 }

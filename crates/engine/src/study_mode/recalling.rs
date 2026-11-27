@@ -51,6 +51,7 @@ pub struct Word {
     pub band: u8,
     pub page: usize,
     pub chars: Range<usize>,
+    pub spot: Option<mareader_library::Spot>,
 }
 
 impl Word {
@@ -246,6 +247,7 @@ mod tests {
             band: 4,
             page: 0,
             chars: 2..7,
+            spot: None,
         }
     }
 

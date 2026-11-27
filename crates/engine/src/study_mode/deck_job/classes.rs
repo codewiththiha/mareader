@@ -143,6 +143,7 @@ mod tests {
             key: Key::new(lemma, tagger),
             form: lemma.to_owned(),
             sentence: String::new(),
+            spot: None,
             band: 5,
             count: 1,
             also: Vec::new(),

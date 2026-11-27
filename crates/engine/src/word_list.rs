@@ -168,7 +168,7 @@ impl WordLists {
 impl Gather {
     pub fn new(wake: Waker, ask: Ask) -> Self {
         let inline = ask.pages.len() <= INLINE || ask.document.is_reflowable();
-        let rx = word_marks::spawn(wake, ask.document, ask.pages, inline);
+        let rx = word_marks::spawn(wake, ask.document, ask.pages, inline, false);
         Self {
             title: ask.title,
             level: ask.level,

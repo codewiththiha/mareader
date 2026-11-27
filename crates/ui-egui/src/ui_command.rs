@@ -94,7 +94,7 @@ pub enum UiCommand {
     /// Opens a vocabulary occurrence and remembers the row to return to.
     FindVocabInBook {
         book: mareader_library::BookId,
-        quote: String,
+        word: mareader_library::WordId,
         row: u128,
     },
     /// Opens a note and remembers where to return in Space.

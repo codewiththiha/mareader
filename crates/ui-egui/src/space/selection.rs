@@ -81,14 +81,9 @@ impl Selection {
                 if widgets::menu_row(ui, Icon::Book, "Go to word in book", None, false).clicked()
                     && let Some(book) = row.book_ids.first().copied()
                 {
-                    let quote = row
-                        .met_at
-                        .as_ref()
-                        .filter(|at| at.book == book)
-                        .map_or_else(|| row.form.clone(), |at| at.quote.clone());
                     out.push(Sent::Ui(UiCommand::FindVocabInBook {
                         book,
-                        quote,
+                        word: row.word,
                         row: row.key,
                     }));
                 }

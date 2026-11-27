@@ -111,9 +111,9 @@ fn context_navigation_can_return_to_its_word() -> Out {
     h.get_by_label("Go to word in book").click();
     h.run_steps(30);
     assert_eq!(h.state().route(), Route::Reader);
-    assert_eq!(
-        h.state().find().query(),
-        "ducked beneath the lintel of the low"
+    assert!(
+        !h.state().find().is_open(),
+        "legacy rows do not open search"
     );
     let expanded = h.get_by_label("Go back to vocabs").rect();
     h.run_steps(340);
