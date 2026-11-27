@@ -198,6 +198,7 @@ fn dispatch(session: &mut Session, intent: Command, now: f64) -> Done {
         | Command::StopSaying => run_timed(session, intent, now, voice::run),
         Command::OpenBook(_)
         | Command::OpenMark(_)
+        | Command::OpenAiSelection(_)
         | Command::PlaceBook { .. }
         | Command::Library(_)
         | Command::ForgetPositions { .. } => run_timed(session, intent, now, library::run),

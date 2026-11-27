@@ -108,7 +108,7 @@ impl Session {
         }
     }
 
-    pub(super) fn skill_remove(&mut self, id: AskId) -> bool {
+    pub(crate) fn skill_remove(&mut self, id: AskId) -> bool {
         self.library.retry_selection_writes();
         if let Some(saved) = self.skills.get(id).and_then(|a| a.pinned) {
             self.library

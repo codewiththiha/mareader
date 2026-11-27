@@ -21,6 +21,13 @@ pub(super) fn run(session: &mut Session, intent: Command, now: f64) {
             open_book(session, book, (None, placement), None, now);
         }
         Command::OpenMark(mark) => open_mark(session, mark, now),
+        Command::OpenAiSelection(id) => {
+            if let Some(item) = session.library_model().ai_selection(id) {
+                let (book, spot) = (item.book.value, item.spot);
+                let placement = clicked(session);
+                open_book(session, book, (None, placement), Some(spot), now);
+            }
+        },
         Command::PlaceBook {
             book,
             pane,

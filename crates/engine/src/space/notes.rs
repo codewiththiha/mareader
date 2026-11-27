@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use mareader_library::{BookId, Library, Mark, MarkId, MarkKind, Spot, Style};
+use mareader_library::{AiSelection, BookId, Library, Mark, MarkId, MarkKind, Spot, Style};
 
 use super::Shelf;
 use crate::notes_panel::{query, reading_order};
@@ -72,10 +72,19 @@ pub struct NoteGroup {
     pub rows: Vec<NoteRow>,
 }
 
+/// Saved selection answers in one book.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AiNoteGroup {
+    pub book: BookId,
+    pub title: String,
+    pub rows: Vec<AiSelection>,
+}
+
 /// Everything the notes page shows for one filter.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct NotesView {
     pub groups: Vec<NoteGroup>,
+    pub ai_groups: Vec<AiNoteGroup>,
     /// The books in the rail, each with every note it holds.
     pub books: Vec<Shelf>,
     /// Every note in every book, for the rail's first row.
@@ -89,24 +98,46 @@ pub struct NotesView {
 /// Reads `lib`'s marks into the rows `filter` keeps.
 pub fn notes(lib: &Library, filter: &NotesFilter) -> NotesView {
     let marks: Vec<&Mark> = kept(lib).collect();
-    let books = shelves(lib, &marks);
+    let mut books = shelves(lib, &marks);
+    let saved: Vec<_> = lib.books().flat_map(|book| lib.ai_selections(book.id)).collect();
+    for item in &saved {
+        if let Some(shelf) = books.iter_mut().find(|b| b.id == item.book.value) {
+            shelf.count += 1;
+        } else if let Some(book) = lib.book(item.book.value) {
+            books.push(Shelf { id: book.id, title: book.title.value.clone(), format: book.format, count: 1 });
+        }
+    }
+    books.sort_by(|a, b| a.title.cmp(&b.title).then(a.id.cmp(&b.id)));
     let book = filter.book.filter(|b| books.iter().any(|s| s.id == *b));
     let mine: Vec<&Mark> = marks
         .iter()
         .copied()
         .filter(|m| book.is_none_or(|b| m.book.value == b))
         .collect();
-    let counts = Kept::ALL.map(|k| mine.iter().filter(|m| k.holds(m)).count());
+    let mut counts = Kept::ALL.map(|k| mine.iter().filter(|m| k.holds(m)).count());
+    counts[0] += saved.iter().filter(|s| book.is_none_or(|id| id == s.book.value)).count();
     let terms = query::terms(&filter.text);
     let kept = |m: &&Mark| {
         let note = m.note.value.as_deref().unwrap_or("");
         filter.kept.holds(m) && query::keeps(&terms, &[&m.word, note])
     };
     let rows: Vec<&Mark> = mine.into_iter().filter(kept).collect();
+    let mut ai_groups = Vec::new();
+    if filter.kept == Kept::All {
+        for shelf in &books {
+            if book.is_some_and(|id| id != shelf.id) { continue; }
+            let items: Vec<_> = saved.iter().filter(|s| s.book.value == shelf.id
+                && query::keeps(&terms, &[&s.source, &s.result, &s.name]))
+                .map(|s| (*s).clone()).collect();
+            if !items.is_empty() { ai_groups.push(AiNoteGroup { book: shelf.id, title: shelf.title.clone(), rows: items }); }
+        }
+    }
+    let ai_shown: usize = ai_groups.iter().map(|g| g.rows.len()).sum();
     NotesView {
-        shown: rows.len(),
+        shown: rows.len() + ai_shown,
         groups: groups(lib, rows),
-        total: marks.len(),
+        ai_groups,
+        total: marks.len() + saved.len(),
         books,
         counts,
     }

@@ -6,6 +6,7 @@
 //! left side, its header and its rows. What a row asks goes back as a
 //! command.
 
+mod ai_notes;
 mod detail;
 mod hub;
 mod locateglow;
@@ -283,7 +284,11 @@ impl SpaceUi {
             self.notes_selection = note_selection::Selection::default();
             self.notes_selection_filter = Some(self.notes.clone());
         }
-        if self.note_reveal.as_ref().is_some_and(|r| ui.ctx().input(|i| i.time) > r.2) {
+        if self
+            .note_reveal
+            .as_ref()
+            .is_some_and(|r| ui.ctx().input(|i| i.time) > r.2)
+        {
             self.note_reveal = None;
         }
         let view = space::notes(from.lib, &self.notes);

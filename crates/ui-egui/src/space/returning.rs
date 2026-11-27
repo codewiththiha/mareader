@@ -74,18 +74,18 @@ pub(super) fn show(ctx: &Context, back: &mut Return, pane: Rect, bar: bool) -> b
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         let icon = Icon::ChevronLeft.image(ui, 18.0).tint(t.ink);
-                        let label = if back.notes.is_some() { "Go back to notes" } else { "Go back to vocabs" };
+                        let label = if back.notes.is_some() {
+                            "Go back to notes"
+                        } else {
+                            "Go back to vocabs"
+                        };
                         let text = if expanded { label } else { "" };
                         let button =
                             egui::Button::image_and_text(icon, RichText::new(text).color(t.ink))
                                 .frame(false);
                         let response = ui.add(button);
                         response.widget_info(|| {
-                            egui::WidgetInfo::labeled(
-                                egui::WidgetType::Button,
-                                true,
-                                label,
-                            )
+                            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label)
                         });
                         response.clicked()
                     })

@@ -16,7 +16,7 @@ mod tally;
 use mareader_library::{BookId, Format, LearnedBy, MeaningBy, RecallAnswer, WordId, WordStatus};
 
 pub use csv::{CSV_NAME, csv};
-pub use notes::{Kept, NoteGroup, NoteRow, NotesFilter, NotesView, notes};
+pub use notes::{AiNoteGroup, Kept, NoteGroup, NoteRow, NotesFilter, NotesView, notes};
 pub use query::{date, day, detail_row, history, view};
 pub use room::Room;
 pub(crate) use seed::seed;
@@ -34,6 +34,8 @@ pub enum Action {
     Forget(Vec<WordId>),
     /// Remove the selected book-word occurrences and their study history.
     RemoveOccurrences(Vec<(BookId, WordId)>),
+    /// Delete saved AI selection results, without changing unrelated marks.
+    RemoveAiSelections(Vec<mareader_library::AiSelectionId>),
 }
 
 /// A row per book's sighting, or a row per word.

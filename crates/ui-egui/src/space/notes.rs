@@ -12,7 +12,7 @@ use mareader_engine::space::{self, Kept, NoteGroup, NoteRow, NotesFilter, NotesV
 use mareader_settings::HighlightSettings;
 use std::sync::Arc;
 
-use super::{look, note_selection::Selection, top};
+use super::{look, note_selection::{Item, Selection}, top};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent, UiCommand};
@@ -72,6 +72,7 @@ pub(super) fn column(
         sheet(ui, group, look, selection, reveal, t, out);
         ui.add_space(8.0);
     }
+    super::ai_notes::show(ui, &view.ai_groups, selection, reveal, t, out);
     selection.finish();
 }
 
@@ -152,7 +153,10 @@ fn sheet(
         for (i, row) in group.rows.iter().enumerate() {
             let ends = (i == 0, i == last);
             if line(ui, row, (look, ends), selection, reveal, t, out) {
-                out.push(Sent::Ui(UiCommand::OpenSpaceNote { book: row.book, mark: row.id }));
+                out.push(Sent::Ui(UiCommand::OpenSpaceNote {
+                    book: row.book,
+                    mark: row.id,
+                }));
             }
             if i < last {
                 let rule = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
@@ -182,7 +186,7 @@ fn line(
     let note_h = note.as_ref().map_or(0.0, |g| g.size().y + 10.0);
     let tall = (PAD_Y * 2.0 + quote.size().y + note_h).max(56.0);
     let (rect, r) = ui.allocate_exact_size(vec2(wide, tall), Sense::click());
-    if r.hovered() || selection.selected(row.id) {
+    if r.hovered() || selection.selected(Item::Mark(row.id)) {
         let round = egui::CornerRadius {
             nw: if ends.0 { look::ROUND as u8 } else { 0 },
             ne: if ends.0 { look::ROUND as u8 } else { 0 },
@@ -192,7 +196,7 @@ fn line(
         ui.painter().rect_filled(
             rect.shrink(1.0),
             round,
-            if selection.selected(row.id) {
+            if selection.selected(Item::Mark(row.id)) {
                 t.accent_soft
             } else {
                 t.hover
@@ -221,18 +225,19 @@ fn line(
     let label = format!("Open {}", row.quote);
     r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
     if rect.intersect(ui.clip_rect()).is_positive() {
-        selection.visible(row.id);
+        selection.visible(Item::Mark(row.id));
     }
     if let Some((key, pending, _)) = reveal
-        && *key == row.id.0 && *pending
+        && *key == row.id.0
+        && *pending
     {
         ui.scroll_to_rect(rect, Some(egui::Align::Center));
         *pending = false;
     }
     super::locateglow::draw(ui, rect, row.id.0, reveal, t);
-    selection.menu(&r, row.id, row.book, out);
+    selection.menu(&r, Item::Mark(row.id), row.book, out);
     if r.clicked() && selection.active() {
-        selection.toggle(row.id);
+        selection.toggle(Item::Mark(row.id));
         false
     } else {
         r.clicked()
