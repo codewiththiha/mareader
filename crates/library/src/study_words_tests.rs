@@ -100,6 +100,30 @@ fn status_and_forgetting_change_only_what_differs() {
 }
 
 #[test]
+fn removing_a_book_word_keeps_other_books_and_does_not_restore_old_answers() {
+    let mut lib = Library::new(A);
+    let (one, two) = (book(&mut lib, "/a.epub", 1), book(&mut lib, "/b.epub", 2));
+    let mut first = word("lintel", WordStatus::Memorized);
+    first.answers.push(crate::RecallAnswer {
+        text: "old answer".into(),
+        verdict: "Wrong".into(),
+        feedback: "old feedback".into(),
+    });
+    let id = lib.record_word(one, first, 2_000).unwrap();
+    lib.record_word(two, word("lintel", WordStatus::Learning), 2_100);
+    assert!(lib.remove_word_from_book(one, id, 3_000));
+    assert!(!lib.remove_word_from_book(one, id, 3_100));
+    assert!(lib.sightings(one).is_empty());
+    assert_eq!(lib.sightings(two).len(), 1);
+    assert_eq!(status(&lib, "lintel"), Some(WordStatus::Memorized));
+    lib.record_word(one, word("lintel", WordStatus::Learning), 4_000);
+    assert!(lib.sightings(one)[0].recall_history.sessions.is_empty());
+    assert!(lib.remove_word_from_book(one, id, 5_000));
+    assert!(lib.remove_word_from_book(two, id, 5_100));
+    assert!(lib.word(id).is_none());
+}
+
+#[test]
 fn the_gate_is_kept_with_the_place_and_travels() {
     let dir = tempfile::tempdir().unwrap();
     let folder = Folder::new(dir.path());

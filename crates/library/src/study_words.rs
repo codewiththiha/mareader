@@ -316,6 +316,28 @@ impl Library {
         ids.len()
     }
 
+    /// Removes one book's studied occurrence without changing other books.
+    pub fn remove_word_from_book(&mut self, book: BookId, word: WordId, wall_ms: u64) -> bool {
+        let exists = self.sightings.values().any(|s| {
+            s.alive.value && s.book.value == book && s.word == word
+        });
+        if !exists {
+            return false;
+        }
+        let at = self.clock.tick(wall_ms);
+        for seen in self.sightings.values_mut_where(|s| {
+            s.alive.value && s.book.value == book && s.word == word
+        }) {
+            clear_sighting(seen, at);
+        }
+        if self.sightings_of(word).is_empty()
+            && let Some(state) = self.words.get_mut(&word)
+        {
+            state.alive = Field::new(false, at);
+        }
+        true
+    }
+
     /// Study mode's gate in `book`: the text unlocked so far.
     pub fn unlocked(&self, book: BookId) -> Option<&Spot> {
         self.states.get(&book)?.unlocked.value.as_ref()
@@ -360,16 +382,22 @@ impl Library {
     /// `book`'s sightings die with their words, kept only for Undo.
     pub(crate) fn forget_sightings(&mut self, book: BookId, at: Stamp) {
         for seen in self.sightings.values_mut_where(|s| s.book.value == book) {
-            seen.alive = Field::new(false, at);
-            seen.form = Field::new(String::new(), at);
-            seen.context = Field::new(String::new(), at);
-            seen.meaning = Field::new(String::new(), at);
-            seen.meaning_by = Field::new(None, at);
-            seen.synonyms = Field::new(Vec::new(), at);
-            seen.usages = Field::new(Vec::new(), at);
-            seen.recall_history.clear(at);
+            clear_sighting(seen, at);
         }
     }
+}
+
+fn clear_sighting(seen: &mut WordSighting, at: Stamp) {
+    seen.alive = Field::new(false, at);
+    seen.form = Field::new(String::new(), at);
+    seen.context = Field::new(String::new(), at);
+    seen.meaning = Field::new(String::new(), at);
+    seen.meaning_by = Field::new(None, at);
+    seen.synonyms = Field::new(Vec::new(), at);
+    seen.usages = Field::new(Vec::new(), at);
+    seen.tries = Field::new(0, at);
+    seen.first_try = Field::new(false, at);
+    seen.recall_history.clear(at);
 }
 
 impl Merge for WordState {
