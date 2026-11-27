@@ -18,12 +18,7 @@ pub(super) fn show(
         return;
     }
     ui.add_space(8.0);
-    ui.label(
-        RichText::new("AI selection results")
-            .strong()
-            .size(t.text + 3.0)
-            .color(t.ink),
-    );
+    ui.label(RichText::new("AI selection results").strong().size(t.text + 3.0).color(t.ink));
     for group in groups {
         ui.label(RichText::new(&group.title).strong().color(t.ink));
         for row in &group.rows {
@@ -49,7 +44,7 @@ pub(super) fn show(
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
                             if ui.add(source).on_hover_text("Go to this selection in the book").clicked() {
-                                out.push(Sent::Ui(UiCommand::OpenSpaceAi { book: group.book, id: row.id }));
+                                open(out, group.book, row.id);
                             }
                         });
                     egui::ScrollArea::vertical()
@@ -74,7 +69,7 @@ pub(super) fn show(
                 if selection.active() {
                     selection.toggle(id);
                 } else {
-                    out.push(Sent::Ui(UiCommand::OpenSpaceAi { book: group.book, id: row.id }));
+                    open(out, group.book, row.id);
                 }
             }
             if let Some((key, pending, _)) = reveal
@@ -87,4 +82,8 @@ pub(super) fn show(
             super::locateglow::draw(ui, rect, row.id.0, reveal, t);
         }
     }
+}
+
+fn open(out: &mut Commands, book: mareader_library::BookId, id: mareader_library::AiSelectionId) {
+    out.push(Sent::Ui(UiCommand::OpenSpaceAi { book, id }));
 }
