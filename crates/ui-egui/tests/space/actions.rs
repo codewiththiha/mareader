@@ -228,16 +228,31 @@ fn return_rises_above_an_expanding_ai_stack() -> Out {
     h.get_by_label("Go to word in book").click();
     h.run_steps(30);
     let pane = h.state().active_pane();
-    let rect = h.state().pane_rects().iter().find(|(id, _)| *id == pane).ok_or("pane not drawn")?.1;
-    let bar = mareader_ui_egui::z_order::layer(mareader_ui_egui::z_order::Tier::PaneBar, egui::Id::new(("page-bar", pane)));
+    let rect = h
+        .state()
+        .pane_rects()
+        .iter()
+        .find(|(id, _)| *id == pane)
+        .ok_or("pane not drawn")?
+        .1;
+    let bar = mareader_ui_egui::z_order::layer(
+        mareader_ui_egui::z_order::Tier::PaneBar,
+        egui::Id::new(("page-bar", pane)),
+    );
     let back = h.get_by_label("Go back to vocabs").rect();
     h.hover_at(back.center());
     h.run_steps(3);
     h.hover_at(egui::pos2(back.center().x, rect.bottom() - 2.0));
     h.run_steps(6);
-    assert!(!h.ctx.memory(|m| m.areas().is_visible(&bar)), "crossing under return waits");
+    assert!(
+        !h.ctx.memory(|m| m.areas().is_visible(&bar)),
+        "crossing under return waits"
+    );
     h.run_steps(40);
-    assert!(h.ctx.memory(|m| m.areas().is_visible(&bar)), "resting opens the page bar");
+    assert!(
+        h.ctx.memory(|m| m.areas().is_visible(&bar)),
+        "resting opens the page bar"
+    );
     h.hover_at(egui::pos2(400.0, 300.0));
     h.run_steps(90);
     for page in [1, 2] {
