@@ -43,8 +43,7 @@ fn header(ui: &mut Ui, detail: &Detail, t: &Tokens) -> bool {
                     .max_width(width)
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
-                        ui.add(Label::new(label).extend().selectable(false))
-                            .on_hover_text(books);
+                        ui.add(Label::new(label).extend().selectable(false));
                     });
             },
         );
@@ -144,6 +143,7 @@ fn core(ui: &mut Ui, detail: &Detail, t: &Tokens) {
                         );
                     });
                 widgets::scroll_fades(ui, &scrolled, t.paper);
+                keep_wheel_inside(ui, &scrolled);
                 if scrolled.content_size.y > scrolled.inner_rect.height() + 1.0 {
                     look::quiet(ui, "Scroll to read more", t.text_small, t);
                 }
@@ -276,8 +276,20 @@ fn recall(ui: &mut Ui, detail: &Detail, t: &Tokens) {
             }
         });
     widgets::scroll_fades(ui, &scrolled, t.card);
+    keep_wheel_inside(ui, &scrolled);
     if scrolled.content_size.y > scrolled.inner_rect.height() + 1.0 {
         look::quiet(ui, "Scroll for more attempts", t.text_small, t);
+    }
+}
+
+// Once the pointer is in an overflowing section, reaching its end must not
+// move the surrounding card on the remaining wheel momentum.
+fn keep_wheel_inside<R>(ui: &Ui, scrolled: &egui::scroll_area::ScrollAreaOutput<R>) {
+    let rect = scrolled.inner_rect.intersect(ui.clip_rect());
+    if scrolled.content_size.y > scrolled.inner_rect.height() + 1.0
+        && ui.rect_contains_pointer(rect)
+    {
+        ui.input_mut(|input| input.smooth_scroll_delta.y = 0.0);
     }
 }
 

@@ -223,10 +223,7 @@ fn recall_scrolls_independently_of_the_word_and_header() {
         "recall scrolls in its own area"
     );
     assert_eq!(h.get_by_label("Close word details").rect(), close);
-    assert_eq!(
-        h.get_by_label("haggard").rect(),
-        meaning
-    );
+    assert_eq!(h.get_by_label("haggard").rect(), meaning);
 }
 
 #[test]
