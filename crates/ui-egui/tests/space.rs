@@ -80,7 +80,11 @@ fn a_row_memorizes_and_forgets_its_word() {
     assert_eq!(status(&h, "ponder"), Some(WordStatus::Learning));
     press(&mut h, "Forget ponder");
     h.run();
-    assert!(h.query_all_by_label("Also delete from AI dictionary").next().is_some());
+    assert!(
+        h.query_all_by_label("Also delete from AI dictionary")
+            .next()
+            .is_some()
+    );
     assert_eq!(status(&h, "ponder"), Some(WordStatus::Learning));
     h.get_by_label("Delete").click();
     h.run();
@@ -483,6 +487,14 @@ fn context_navigation_can_return_to_its_word() -> Out {
         h.state().find().query(),
         "ducked beneath the lintel of the low"
     );
+    let expanded = h.get_by_label("Go back to vocabs").rect();
+    h.run_steps(340);
+    let folded = h.get_by_label("Go back to vocabs").rect();
+    assert!(folded.width() < expanded.width(), "return control folds after five seconds");
+    h.hover_at(folded.center());
+    h.run_steps(10);
+    let hovered = h.get_by_label("Go back to vocabs").rect();
+    assert!(hovered.width() > folded.width(), "hover expands the control");
     h.get_by_label("Go back to vocabs").click();
     h.run_steps(30);
     assert_eq!(h.state().route(), Route::Space);
@@ -503,7 +515,10 @@ fn select_all_targets_only_visible_rows() {
     confirm_delete(&mut h);
     let lib = h.state().session().library_model();
     assert!(lib.words().count() < 8);
-    assert!(lib.words().any(|w| w.lemma == "reverie"), "offscreen item stays");
+    assert!(
+        lib.words().any(|w| w.lemma == "reverie"),
+        "offscreen item stays"
+    );
 }
 
 #[test]
@@ -515,23 +530,43 @@ fn ai_dictionary_deletion_requires_opt_in() {
         let mut dict = Dictionaries::default();
         dict.attach(dir.path().to_owned(), Arc::new(|| {})).unwrap();
         dict.set_inline(true);
-        let entry = Saved { word: "gaunt".into(), pos: "adjective".into(), lang: "en".into(), meaning: "thin".into(), ..Saved::default() };
-        dict.ask(Query::Remember { saved: vec![entry], replace: false });
+        let entry = Saved {
+            word: "gaunt".into(),
+            pos: "adjective".into(),
+            lang: "en".into(),
+            meaning: "thin".into(),
+            ..Saved::default()
+        };
+        dict.ask(Query::Remember {
+            saved: vec![entry],
+            replace: false,
+        });
         assert!(dict.poll().1.iter().all(|r| r.failed.is_none()));
         let path = dir.path().to_str().unwrap();
-        let mut h = reader(&[("books", "3"), ("words", "demo"), ("space", "words"), ("dictionaries", path)]);
+        let mut h = reader(&[
+            ("books", "3"),
+            ("words", "demo"),
+            ("space", "words"),
+            ("dictionaries", path),
+        ]);
         h.get_by_label("Merged").click();
         h.run();
         right_click(&mut h, "Details for gaunt");
         h.get_by_label("Delete…").click();
         h.run();
         if opt_in {
-            h.query_all_by_label("Also delete from AI dictionary").last().unwrap().click();
+            h.query_all_by_label("Also delete from AI dictionary")
+                .last()
+                .unwrap()
+                .click();
             h.run();
         }
         confirm_delete(&mut h);
         h.run_steps(20);
-        dict.ask(Query::Remembered { words: vec!["gaunt".into()], lang: "en".into() });
+        dict.ask(Query::Remembered {
+            words: vec!["gaunt".into()],
+            lang: "en".into(),
+        });
         let found = dict.poll().1.into_iter().next().unwrap();
         assert_eq!(!found.saved.is_empty(), !opt_in);
     }

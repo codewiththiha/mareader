@@ -59,7 +59,7 @@ pub(super) fn show(ctx: &Context, back: &mut Return, pane: Rect, bar: bool) -> b
                 .inner_margin(Margin::symmetric(8, 5))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        let icon = Icon::ChevronLeft.image(ui, 18.0);
+                        let icon = Icon::ChevronLeft.image(ui, 18.0).tint(t.ink);
                         let text = if expanded { "Go back to vocabs" } else { "" };
                         let button =
                             egui::Button::image_and_text(icon, RichText::new(text).color(t.ink))

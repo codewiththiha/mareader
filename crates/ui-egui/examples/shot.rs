@@ -363,9 +363,13 @@ fn main() -> Result<(), String> {
         wait_for_ready(&mut harness, true, false, 45);
     }
     if seed_space_after_open {
-        harness.state_mut().queue(Sent::Engine(Command::Library(mareader_engine::library::Action::SeedWords)));
+        harness.state_mut().queue(Sent::Engine(Command::Library(
+            mareader_engine::library::Action::SeedWords,
+        )));
         harness.run_steps(4);
-        harness.state_mut().queue(Sent::Engine(Command::ShowSpace(mareader_engine::space::Room::Words)));
+        harness.state_mut().queue(Sent::Engine(Command::ShowSpace(
+            mareader_engine::space::Room::Words,
+        )));
         harness.run_steps(8);
     }
     let mut library_shown = false;
