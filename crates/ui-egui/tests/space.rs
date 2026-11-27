@@ -171,6 +171,25 @@ fn word_details_open_from_list_and_escape_returns_to_words() {
 }
 
 #[test]
+fn normal_word_detail_fits_without_outer_scroll() {
+    let mut h = words();
+    h.get_by_label("Merged").click();
+    h.run();
+    h.get_by_label("Details for gaunt").click();
+    h.run_steps(30);
+    let before = h.get_by_label("haggard").rect();
+    h.hover_at(h.get_by_label("Close word details").rect().center() + egui::vec2(-30.0, 45.0));
+    h.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -180.0),
+        phase: egui::TouchPhase::Move,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.run_steps(30);
+    assert_eq!(h.get_by_label("haggard").rect(), before);
+}
+
+#[test]
 fn narrow_word_details_scroll_without_moving_the_header() {
     let mut h = words();
     h.get_by_label("Details for arcane").click();

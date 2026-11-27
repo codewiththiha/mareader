@@ -98,7 +98,7 @@ impl Detail {
         let screen = ctx.content_rect();
         let size = vec2(
             (screen.width() - 32.0).clamp(0.0, 680.0),
-            (screen.height() - 32.0).clamp(0.0, 520.0),
+            (screen.height() - 32.0).clamp(0.0, 640.0),
         );
         let target = Rect::from_center_size(screen.center(), size);
         let rect = Rect::from_min_max(
