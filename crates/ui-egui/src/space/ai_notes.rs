@@ -42,7 +42,11 @@ pub(super) fn show(
                         .max_height(90.0)
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
-                            if ui.add(source).on_hover_text("Go to this selection in the book").clicked() {
+                            if ui
+                                .add(source)
+                                .on_hover_text("Go to this selection in the book")
+                                .clicked()
+                            {
                                 open(out, group.book, row.id);
                             }
                         });
@@ -89,5 +93,10 @@ fn open(out: &mut Commands, book: mareader_library::BookId, id: mareader_library
 
 fn heading(ui: &mut Ui, t: &Tokens) {
     ui.add_space(8.0);
-    ui.label(RichText::new("AI selection results").strong().size(t.text + 3.0).color(t.ink));
+    ui.label(
+        RichText::new("AI selection results")
+            .strong()
+            .size(t.text + 3.0)
+            .color(t.ink),
+    );
 }
