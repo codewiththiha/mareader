@@ -6,6 +6,7 @@
 //! answer from a script, for tests and shots.
 
 use std::ops::Range;
+use std::sync::Arc;
 
 use super::Key;
 use crate::class::Pos;
@@ -68,6 +69,12 @@ pub type Answer = Result<Vec<Option<Written>>, Failure>;
 
 /// Writes a deck's backs off the UI thread.
 pub trait CardWriter: Send + Sync {
+    /// Pins settings for a deck so its cache, requests and filing agree.
+    /// Writers without changing settings may return none.
+    fn snapshot(&self) -> Option<Arc<dyn CardWriter>> {
+        None
+    }
+
     /// Who writes, as the waiting card names them.
     fn by(&self) -> String;
 

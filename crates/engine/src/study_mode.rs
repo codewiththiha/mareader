@@ -177,7 +177,10 @@ impl State {
     /// The AI's writer with the backs it wrote before; none without one.
     pub(crate) fn writer(&self) -> Option<Writer> {
         let backs = self.backs.clone();
-        self.cards.clone().map(|cards| Writer { cards, backs })
+        self.cards.clone().map(|cards| {
+            let cards = cards.snapshot().unwrap_or(cards);
+            Writer { cards, backs }
+        })
     }
 
     pub fn run(&self, pane: PaneId) -> Option<&Run> {

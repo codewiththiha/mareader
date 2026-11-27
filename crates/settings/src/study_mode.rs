@@ -77,16 +77,15 @@ impl Default for StudyModeSettings {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct StudyTask {
-    /// The meaning's language by tag; none follows Explain's.
+    /// The meaning's language by tag; none follows the dictionary default.
     pub language: Option<String>,
 }
 
 impl AiSettings {
-    /// The cards' language as a name: study's own, else Explain's.
+    /// The cards' language as a name; unresolved defaults use English.
     pub fn study_language(&self) -> Option<&'static str> {
         let own = self.tasks.study.language.as_deref();
-        own.and_then(language_name)
-            .or_else(|| self.explain_language())
+        own.and_then(language_name).or(Some("English"))
     }
 }
 
@@ -133,7 +132,7 @@ mod tests {
         ai.tasks.explain.language = Some("my".into());
         let id = |ai: &AiSettings, t| ai.model(t).map(|p| p.id);
         assert_eq!(id(&ai, TaskId::StudyCards), Some(explain));
-        assert_eq!(ai.study_language(), Some("Burmese"));
+        assert_eq!(ai.study_language(), Some("English"));
         ai.tasks.choose(TaskId::StudyJudge, Some(own));
         ai.tasks.study.language = Some("fr".into());
         assert_eq!(id(&ai, TaskId::StudyJudge), Some(own));

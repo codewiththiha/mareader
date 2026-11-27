@@ -24,7 +24,7 @@ pub(super) use pickers::{language_picker, preset_picker};
 
 const PICK_W: f32 = 240.0;
 const DICTIONARY: &str = TaskId::Explain.spec().label;
-const BOOKS_LANGUAGE: &str = "The book's language";
+const DICTIONARY_LANGUAGE: &str = "Same as Dictionary";
 /// Books per request Apple's small context holds.
 const APPLE_BATCH: u16 = 20;
 
@@ -150,12 +150,12 @@ fn dictionary(ui: &mut Ui, ai: &mut AiSettings, (h, gloss): Looks<'_>, board: Op
         }
         divider(ui);
         let tip = "Explain's meaning, kept in the AI dictionary; synonyms and examples stay \
-                   in the word's language. Lookups answer in Dictionary › Default language";
+                   in the word's language. Same as Dictionary uses its default, or English";
         row(ui, "Meaning in", tip, |ui| {
             let meaning = &mut ai.tasks.explain.language;
             language_picker(
                 ui,
-                ("ai-meaning-language", BOOKS_LANGUAGE),
+                ("ai-meaning-language", DICTIONARY_LANGUAGE),
                 meaning,
                 &speaks,
             );

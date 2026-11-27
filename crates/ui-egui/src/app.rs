@@ -12,6 +12,7 @@ mod navigation;
 mod page_ai;
 mod panes;
 mod read_aloud;
+mod services;
 mod setup;
 mod skills;
 mod space;

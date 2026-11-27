@@ -16,7 +16,7 @@ use mareader_study::mode::{
 
 use super::Assist;
 use crate::backend::Backend;
-use crate::dispatch::Dispatcher;
+use crate::dispatch::{Dispatcher, Followed};
 use crate::retry;
 use crate::running::{Running, Say};
 use crate::study_judge::StudyJudge;
@@ -25,32 +25,42 @@ use crate::study_mode::StudyCards;
 impl Assist {
     /// The writer of study mode's cards, on the cards' model.
     pub fn cards(&self) -> Arc<dyn CardWriter> {
-        Arc::new(AiCards(self.jobs_on.clone()))
+        Arc::new(AiCards(self.jobs_on.clone(), None))
     }
 
     /// The judge of Reactive mode's recalls, on the judge's model.
     pub fn judge(&self) -> Arc<dyn Judge> {
-        Arc::new(AiCards(self.jobs_on.clone()))
+        Arc::new(AiCards(self.jobs_on.clone(), None))
     }
 }
 
 /// Study's models, as both the card writer and the judge; each job reads
 /// the settings followed when it starts.
-struct AiCards(Dispatcher);
+struct AiCards(Dispatcher, Option<Arc<Followed>>);
+
+impl AiCards {
+    fn now(&self) -> Arc<Followed> {
+        self.1.clone().unwrap_or_else(|| self.0.followed())
+    }
+}
 
 impl CardWriter for AiCards {
+    fn snapshot(&self) -> Option<Arc<dyn CardWriter>> {
+        Some(Arc::new(Self(self.0.clone(), Some(self.now()))))
+    }
+
     fn by(&self) -> String {
-        self.0.followed().by(TaskId::StudyCards)
+        self.now().by(TaskId::StudyCards)
     }
 
     fn id(&self) -> String {
-        let now = self.0.followed();
+        let now = self.now();
         let language = now.ai.study_language().unwrap_or("English");
         format!("{}|{language}", now.by(TaskId::StudyCards))
     }
 
     fn per_request(&self) -> usize {
-        let route = self.0.followed().route(TaskId::StudyCards);
+        let route = self.now().route(TaskId::StudyCards);
         let set = route
             .first()
             .map_or(PER_REQUEST, |s| s.preset.cards_per_request);
@@ -58,7 +68,7 @@ impl CardWriter for AiCards {
     }
 
     fn write(&self, words: Vec<Wanted>) -> Box<CardJob> {
-        let now = self.0.followed();
+        let now = self.now();
         let (words, language) = (Arc::new(words), now.ai.study_language());
         // Each card comes as it is written, so a waiting deck fills.
         let step = move |backend: Arc<dyn Backend>, retry, say: Say<_, _>| {
@@ -78,7 +88,7 @@ impl CardWriter for AiCards {
     }
 
     fn language(&self) -> Option<&'static str> {
-        let now = self.0.followed();
+        let now = self.now();
         Some(now.ai.study_language().unwrap_or("English"))
     }
 }
@@ -89,7 +99,7 @@ impl Judge for AiCards {
     }
 
     fn judge(&self, attempt: Attempt) -> Box<JudgeJob> {
-        let now = self.0.followed();
+        let now = self.now();
         let (attempt, language) = (Arc::new(attempt), now.ai.study_language());
         let step = move |backend: Arc<dyn Backend>, retry, _: Say<_, _>| {
             let attempt = Arc::clone(&attempt);

@@ -222,7 +222,7 @@ impl ModelPreset {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ExplainTask {
-    /// A tag of `mareader_dict::LANGUAGES`; none: the book's language.
+    /// A catalog tag; none follows the dictionary default, or English.
     pub language: Option<String>,
 }
 

@@ -560,7 +560,11 @@ The Notes panel reads like a notebook as a book's highlights grow.
 ## Meaning in another language (2026-10-19)
 
 Settings › AI › Tasks › **Meaning in** picks the language of Explain's
-meaning: the book's language (the default) or one of 40 listed ones.
+meaning: Same as Dictionary (the default) or one of the listed languages.
+The default follows an available Dictionary › Default language, or English
+when there is no usable default. Study cards follow the dictionary independently
+of the Meaning in choice. Existing explicit choices are kept; previously
+unset choices now follow the dictionary rather than the book or AI Dictionary.
 
 - Only the meaning changes. The part of speech, synonyms and usages stay in
   the word's own language, English for an English word, never the chosen

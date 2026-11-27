@@ -123,6 +123,35 @@ fn a_deck_s_backs_come_in_one_request_by_number() {
 }
 
 #[test]
+fn a_deck_snapshot_keeps_its_language_and_model_when_settings_change() {
+    let (_rt, server) = server(vec![Answer::stream(&[BACKS])]);
+    let dir = tempfile::tempdir().unwrap();
+    let mut a = assist(&dir);
+    let mut ai = settings(&server.url);
+    ai.tasks.study.language = Some("fr".into());
+    ai.presets[0].cards_per_request = 4;
+    let _ = a.configure(&ai);
+    let live = a.cards();
+    let frozen = live.snapshot().unwrap();
+    ai.tasks.study.language = Some("my".into());
+    ai.presets[0].cards_per_request = 12;
+    let _ = a.configure(&ai);
+    assert_eq!(live.language(), Some("Burmese"));
+    assert_eq!(frozen.language(), Some("French"));
+    assert!(frozen.id().ends_with("|French"));
+    assert_eq!(frozen.per_request(), 4);
+    let _ = finish(
+        frozen
+            .write(vec![wanted("arcane"), wanted("brisk")])
+            .as_mut(),
+    )
+    .unwrap();
+    let sent = server.seen()[0].body.to_string();
+    assert!(sent.contains("French"), "{sent}");
+    assert!(!sent.contains("Burmese"), "{sent}");
+}
+
+#[test]
 fn a_deck_s_backs_come_card_by_card_as_they_are_written() {
     // The first chunk ends inside the second card's meaning.
     let at = BACKS.find("Hidden").unwrap() + 3;

@@ -117,7 +117,7 @@ fn proactive(ui: &mut Ui, m: &mut StudyModeSettings, both: bool) {
 #[cfg(not(target_arch = "wasm32"))]
 fn model(ui: &mut Ui, ai: &mut mareader_settings::AiSettings) {
     use super::ai::{Home, model_row, placed};
-    const SAME: &str = "Same as AI Dictionary";
+    const SAME: &str = "Same as Dictionary";
     if ai.presets.is_empty() {
         return;
     }
@@ -127,8 +127,8 @@ fn model(ui: &mut Ui, ai: &mut mareader_settings::AiSettings) {
             model_row(ui, ai, task);
             divider(ui);
         }
-        let hint = "AI decks write the meaning and feedback in it; synonyms and examples \
-                    stay in English. Dictionary decks use Dictionary › Default language";
+        let hint = "AI decks write meanings and feedback in it; synonyms and examples stay \
+                    in English. Same as Dictionary uses its default, or English";
         row(ui, "Cards in", hint, |ui| {
             let language = &mut ai.tasks.study.language;
             let speaks = |_: &str| None::<bool>;

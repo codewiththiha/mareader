@@ -28,7 +28,7 @@ pub use mareader_assist::{Board, Job};
 pub struct Ai {
     #[cfg(not(target_arch = "wasm32"))]
     assist: Option<mareader_assist::Assist>,
-    made_for: Option<AiSettings>,
+    made_for: Option<(AiSettings, Option<String>)>,
     /// The library run under way; dropping it stops the run.
     #[cfg(not(target_arch = "wasm32"))]
     organizing: Option<mareader_assist::Organizing>,
@@ -53,17 +53,19 @@ impl Ai {
 
     /// Takes in finished jobs; when `ai` changed since, follows it and
     /// hands back the answerers for the study tools. None on the web.
-    pub fn follow(&mut self, ai: &AiSettings) -> Option<Answerers> {
+    pub fn follow(&mut self, ai: &AiSettings, dictionary: Option<&str>) -> Option<Answerers> {
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(assist) = &mut self.assist {
             assist.poll();
-            if self.made_for.as_ref() != Some(ai) {
-                self.made_for = Some(ai.clone());
-                let _ = assist.configure(ai);
+            let key = (ai.clone(), dictionary.map(str::to_owned));
+            if self.made_for.as_ref() != Some(&key) {
+                self.made_for = Some(key);
+                let resolved = ai.with_dictionary_language(dictionary);
+                let _ = assist.configure(&resolved);
                 return Some(assist.answerers());
             }
         }
-        let _ = (ai, &self.made_for);
+        let _ = (ai, dictionary, &self.made_for);
         None
     }
 
