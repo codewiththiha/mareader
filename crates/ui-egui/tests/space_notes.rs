@@ -151,19 +151,33 @@ fn note_navigation_returns_to_filtered_notes() -> Result<(), Box<dyn std::error:
 
 #[test]
 fn ai_tab_filters_marks_and_all_keeps_both_kinds() {
-    let mut h = reader(&[("books", "3"), ("marks", "demo"), ("ai_notes", "demo"), ("space", "notes")]);
+    let mut h = reader(&[
+        ("books", "3"),
+        ("marks", "demo"),
+        ("ai_notes", "demo"),
+        ("space", "notes"),
+    ]);
     h.set_size(egui::vec2(1280.0, 900.0));
     h.run_steps(10);
     assert!(h.query_by_label("AI selection results 1").is_some());
     assert!(h.query_by_label("A selected passage").is_some());
-    assert!(h.query_by_label("Open The mind is its own place.").is_some());
+    assert!(
+        h.query_by_label("Open The mind is its own place.")
+            .is_some()
+    );
     h.get_by_label("AI selection results 1").click();
     h.run_steps(5);
     assert!(h.query_by_label("A selected passage").is_some());
-    assert!(h.query_by_label("Open The mind is its own place.").is_none());
+    assert!(
+        h.query_by_label("Open The mind is its own place.")
+            .is_none()
+    );
     h.get_by_label("All 10").click();
     h.run_steps(5);
-    assert!(h.query_by_label("Open The mind is its own place.").is_some());
+    assert!(
+        h.query_by_label("Open The mind is its own place.")
+            .is_some()
+    );
     assert!(h.query_by_label("A selected passage").is_some());
 }
 
@@ -173,7 +187,10 @@ fn both_room_sidebars_return_to_space_at_the_bottom() {
         let mut h = marked(room);
         let button = h.get_by_label("Back to Space");
         let rect = button.rect();
-        assert!(rect.bottom() > 800.0, "{room} back button stays at the foot: {rect:?}");
+        assert!(
+            rect.bottom() > 800.0,
+            "{room} back button stays at the foot: {rect:?}"
+        );
         button.click();
         h.run_steps(5);
         assert_eq!(h.state().session().room(), Room::Hub);
@@ -190,4 +207,42 @@ fn narrow_room_back_control_still_reaches_the_hub() {
         h.run_steps(5);
         assert_eq!(h.state().session().room(), Room::Hub);
     }
+}
+
+#[test]
+fn narrow_notes_expose_all_four_tabs() {
+    let mut h = reader(&[("books", "3"), ("ai_notes", "demo"), ("space", "notes")]);
+    h.set_size(egui::vec2(400.0, 650.0));
+    h.run_steps(8);
+    let tab = h.get_by_label("AI selection results 1");
+    assert!(tab.rect().right() < 400.0, "the fourth tab is not clipped");
+    tab.click();
+    h.run_steps(5);
+    assert!(h.query_by_label("A selected passage").is_some());
+}
+
+#[test]
+fn highlight_and_bookmark_clicks_offer_the_reader_return() -> Result<(), Box<dyn std::error::Error>> {
+    use mareader_engine::{command::Command, library::Action, route::Route};
+    use mareader_ui_egui::ui_command::Sent;
+    let raven = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../epub/tests/books/the-raven-gutenberg-17192.epub").canonicalize()?;
+    for (tab, label) in [("All 9", "Open The mind is its own place."), ("Bookmarks 2", "Open Chapter 3")] {
+        let mut h = reader(&[("epub", raven.to_str().ok_or("UTF-8 path")?)]);
+        h.set_size(egui::vec2(1280.0, 900.0));
+        h.run_steps(10);
+        h.state_mut().queue(Sent::Engine(Command::Library(Action::SeedMarks)));
+        h.state_mut().queue(Sent::Engine(Command::ShowSpace(Room::Notes)));
+        h.run_steps(10);
+        h.get_by_label(tab).click();
+        h.run_steps(4);
+        h.get_by_label(label).click();
+        h.run_steps(30);
+        assert_eq!(h.state().route(), Route::Reader);
+        h.get_by_label("Go back to notes").click();
+        h.run_steps(8);
+        assert_eq!(h.state().session().room(), Room::Notes);
+        assert!(h.query_by_label(label).is_some(), "returned to {label}");
+    }
+    Ok(())
 }

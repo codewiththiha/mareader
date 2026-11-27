@@ -123,7 +123,13 @@ fn saved_ai_selections_appear_in_all_and_search() {
     let all = notes(&lib, &NotesFilter::default());
     assert_eq!(all.total, 4);
     assert_eq!(all.counts, [4, 1, 1, 1]);
-    let ai = notes(&lib, &NotesFilter { kept: Kept::Ai, ..NotesFilter::default() });
+    let ai = notes(
+        &lib,
+        &NotesFilter {
+            kept: Kept::Ai,
+            ..NotesFilter::default()
+        },
+    );
     assert_eq!(ai.shown, 1);
     assert!(ai.groups.is_empty());
     assert_eq!(ai.ai_groups.len(), 1);

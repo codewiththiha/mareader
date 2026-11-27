@@ -126,7 +126,10 @@ pub fn notes(lib: &Library, filter: &NotesFilter) -> NotesView {
         .filter(|m| book.is_none_or(|b| m.book.value == b))
         .collect();
     let mut counts = Kept::ALL.map(|k| mine.iter().filter(|m| k.holds(m)).count());
-    let ai_count = saved.iter().filter(|s| book.is_none_or(|id| id == s.book.value)).count();
+    let ai_count = saved
+        .iter()
+        .filter(|s| book.is_none_or(|id| id == s.book.value))
+        .count();
     counts[0] += ai_count;
     counts[Kept::Ai as usize] = ai_count;
     let terms = query::terms(&filter.text);

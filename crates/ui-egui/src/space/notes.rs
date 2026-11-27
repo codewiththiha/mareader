@@ -55,11 +55,18 @@ pub(super) fn column(
     }
     header(ui, filter, t);
     let items = Kept::ALL.map(|k| (k, k.label(), view.counts[k as usize]));
-    let tabs = egui::ScrollArea::horizontal().id_salt("space-notes-tabs").auto_shrink([false, true]);
-    let tabs = if ui.available_width() < 500.0 {
-        tabs.scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
-    } else { tabs };
-    tabs.show(ui, |ui| top::tab_row(ui, &items, &mut filter.kept, t));
+    if ui.available_width() < 500.0 {
+        ui.scope(|ui| {
+            ui.spacing_mut().item_spacing.y = 2.0;
+            let (first, second) = items.split_at(2);
+            top::tab_row(ui, first, &mut filter.kept, t);
+            egui::ScrollArea::horizontal().id_salt("space-notes-tabs").show(ui, |ui| {
+                top::tab_row(ui, second, &mut filter.kept, t);
+            });
+        });
+    } else {
+        top::tab_row(ui, &items, &mut filter.kept, t);
+    }
     if narrow {
         books(ui, view, filter);
     }
