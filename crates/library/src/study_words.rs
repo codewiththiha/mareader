@@ -318,16 +318,18 @@ impl Library {
 
     /// Removes one book's studied occurrence without changing other books.
     pub fn remove_word_from_book(&mut self, book: BookId, word: WordId, wall_ms: u64) -> bool {
-        let exists = self.sightings.values().any(|s| {
-            s.alive.value && s.book.value == book && s.word == word
-        });
+        let exists = self
+            .sightings
+            .values()
+            .any(|s| s.alive.value && s.book.value == book && s.word == word);
         if !exists {
             return false;
         }
         let at = self.clock.tick(wall_ms);
-        for seen in self.sightings.values_mut_where(|s| {
-            s.alive.value && s.book.value == book && s.word == word
-        }) {
+        for seen in self
+            .sightings
+            .values_mut_where(|s| s.alive.value && s.book.value == book && s.word == word)
+        {
             clear_sighting(seen, at);
         }
         if self.sightings_of(word).is_empty()
