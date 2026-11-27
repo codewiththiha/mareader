@@ -68,22 +68,7 @@ pub(super) fn picker(
                     spec,
                     &enabled,
                     |ui, font, label| {
-                        let next = match font {
-                            FontChoice::Default => 0,
-                            FontChoice::Bundled(_) => 1,
-                            FontChoice::System(_) => 2,
-                        };
-                        if group != next && next != 0 {
-                            let title = if next == 1 {
-                                "Bundled"
-                            } else {
-                                "On this computer"
-                            };
-                            let t = Tokens::get(ui.ctx());
-                            ui.add_space(4.0);
-                            ui.label(RichText::new(title).size(t.text_small).color(t.muted));
-                        }
-                        group = next;
+                        heading(ui, font, &mut group);
                         ui.add_enabled(
                             enabled(font),
                             Button::selectable(*choice == *font, label).truncate(),
@@ -98,6 +83,25 @@ pub(super) fn picker(
                 }
             });
     });
+}
+
+fn heading(ui: &mut Ui, font: &FontChoice, group: &mut u8) {
+    let next = match font {
+        FontChoice::Default => 0,
+        FontChoice::Bundled(_) => 1,
+        FontChoice::System(_) => 2,
+    };
+    if *group != next && next != 0 {
+        let title = if next == 1 {
+            "Bundled"
+        } else {
+            "On this computer"
+        };
+        let t = Tokens::get(ui.ctx());
+        ui.add_space(4.0);
+        ui.label(RichText::new(title).size(t.text_small).color(t.muted));
+    }
+    *group = next;
 }
 
 fn kind(family: FontFamily) -> Kind {
