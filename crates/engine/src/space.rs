@@ -17,7 +17,7 @@ use mareader_library::{BookId, Format, LearnedBy, MeaningBy, RecallAnswer, WordI
 
 pub use csv::{CSV_NAME, csv};
 pub use notes::{Kept, NoteGroup, NoteRow, NotesFilter, NotesView, notes};
-pub use query::{date, day, view};
+pub use query::{date, day, history, view};
 pub use room::Room;
 pub(crate) use seed::seed;
 pub(crate) use seed_marks::seed_marks;
@@ -198,7 +198,6 @@ pub struct Row {
     pub first_try: bool,
     pub synonyms: Vec<String>,
     pub usages: Vec<String>,
-    pub history: Vec<History>,
 }
 
 /// One recall session in a book.

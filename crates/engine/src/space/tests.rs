@@ -137,6 +137,30 @@ fn merged_sentence_keeps_the_form_of_its_own_sighting() {
 }
 
 #[test]
+fn history_respects_the_selected_books_and_keeps_every_session() {
+    use mareader_library::RecallAnswer;
+    let mut lib = Library::new(DeviceId(1));
+    let (one, two) = (book(&mut lib, "One", 11), book(&mut lib, "Two", 12));
+    let answer = |text: &str| NewWord {
+        by: LearnedBy::Reactive,
+        answers: vec![RecallAnswer { text: text.into(), ..Default::default() }],
+        ..noun("run", 2)
+    };
+    lib.record_word(one, answer("first"), OCT);
+    lib.record_word(one, answer("second"), OCT + 1);
+    lib.record_word(two, answer("third"), NOV);
+    let merged = view(&lib, &az(Scope::Merged));
+    let row = merged.rows().next().expect("a word");
+    let all = history(&lib, row);
+    assert_eq!(all.len(), 3);
+    assert_eq!(all[0].answers[0].text, "third");
+    let filter = Filter { book: Some(one), ..az(Scope::Merged) };
+    let selected = view(&lib, &filter);
+    let row = selected.rows().next().expect("a word");
+    assert_eq!(history(&lib, row).len(), 2);
+}
+
+#[test]
 fn the_tabs_count_every_filter_but_their_own() {
     let lib = shelf();
     let filter = Filter {

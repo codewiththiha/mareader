@@ -4,7 +4,7 @@ use egui::{
     Align, Color32, Context, Id, Label, Layout, Rect, RichText, Sense, Stroke, Ui, UiBuilder, vec2,
 };
 use mareader_dict::{Entry, Reply, Ticket};
-use mareader_engine::space::{self, Row};
+use mareader_engine::space::{self, History, Row};
 
 use super::{look, sentence};
 use crate::icons::Icon;
@@ -16,6 +16,7 @@ const DURATION: f64 = 0.24;
 
 pub(super) struct Detail {
     row: Row,
+    history: Vec<History>,
     source: Rect,
     started: f64,
     closing: bool,
@@ -26,9 +27,10 @@ pub(super) struct Detail {
 }
 
 impl Detail {
-    pub fn new(row: Row, source: Rect, now: f64) -> Self {
+    pub fn new(row: Row, history: Vec<History>, source: Rect, now: f64) -> Self {
         Self {
             row,
+            history,
             source,
             started: now,
             closing: false,
@@ -261,11 +263,11 @@ impl Detail {
     }
 
     fn history(&self, ui: &mut Ui, t: &Tokens) {
-        if self.row.history.is_empty() && self.row.by != mareader_library::LearnedBy::Reactive {
+        if self.history.is_empty() && self.row.by != mareader_library::LearnedBy::Reactive {
             return;
         }
         section(ui, "Your recall answers", t);
-        if self.row.history.is_empty() {
+        if self.history.is_empty() {
             look::quiet(
                 ui,
                 "No answer text was saved for earlier recalls.",
@@ -273,7 +275,7 @@ impl Detail {
                 t,
             );
         }
-        for run in &self.row.history {
+        for run in &self.history {
             let title = format!("{} · {}", run.book, space::date(run.when));
             ui.label(RichText::new(title).color(t.muted));
             for (i, answer) in run.answers.iter().enumerate() {

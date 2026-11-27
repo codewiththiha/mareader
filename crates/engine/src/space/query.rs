@@ -144,7 +144,6 @@ fn row(key: u128, mets: &[&Met<'_>]) -> Option<Row> {
         first_try: mets.iter().any(|m| m.seen.first_try.value),
         synonyms: unique(mets.iter().flat_map(|m| m.seen.synonyms.value.iter())),
         usages: unique(mets.iter().flat_map(|m| m.seen.usages.value.iter())),
-        history: history(mets),
     })
 }
 
@@ -158,12 +157,19 @@ fn unique<'a>(items: impl Iterator<Item = &'a String>) -> Vec<String> {
     out
 }
 
-fn history(mets: &[&Met<'_>]) -> Vec<History> {
+/// Recall sessions belonging to a displayed word's included books.
+pub fn history(lib: &Library, row: &Row) -> Vec<History> {
     let mut out = Vec::new();
-    for met in mets {
-        for run in met.seen.recall_history.sessions.values() {
+    for seen in lib.sightings_of(row.word) {
+        if !row.book_ids.contains(&seen.book.value) {
+            continue;
+        }
+        let Some(book) = lib.book(seen.book.value) else {
+            continue;
+        };
+        for run in seen.recall_history.sessions.values() {
             out.push(History {
-                book: met.title.to_owned(),
+                book: book.title.value.clone(),
                 when: run.when,
                 answers: run.answers.clone(),
             });

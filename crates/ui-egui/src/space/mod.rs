@@ -168,7 +168,7 @@ impl SpaceUi {
         let filter = &mut self.filter;
         let main = rail(ui, page, t, |ui| rail::show(ui, &view, filter, t));
         let col = column(page, main, MAX_W);
-        ui.scope_builder(down(col), |ui| self.word_column(ui, &view, t, out))
+        ui.scope_builder(down(col), |ui| self.word_column(ui, lib, &view, t, out))
             .inner
     }
 
@@ -208,6 +208,7 @@ impl SpaceUi {
     fn word_column(
         &mut self,
         ui: &mut Ui,
+        lib: &Library,
         view: &View,
         t: &Tokens,
         out: &mut Commands,
@@ -240,7 +241,8 @@ impl SpaceUi {
         crate::widgets::scroll_fades(ui, &scrolled, t.paper);
         if let Some((row, rect)) = picked {
             let now = ui.ctx().input(|i| i.time);
-            let detail = detail::Detail::new(row, rect, now);
+            let history = space::history(lib, &row);
+            let detail = detail::Detail::new(row, history, rect, now);
             self.lookup = Some(detail.word().to_owned());
             self.detail = Some(detail);
             ui.ctx().request_repaint();

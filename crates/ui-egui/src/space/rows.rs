@@ -134,7 +134,11 @@ fn line(
                         let took = ui.allocate_ui_with_layout(size, lead, |ui| word(ui, row, t));
                         ui.add_space((word_w - took.response.rect.width()).max(0.0));
                         let meaning = RichText::new(&row.meaning).size(t.text + 1.0);
-                        ui.add(Label::new(meaning.color(t.ink)).truncate().selectable(false));
+                        ui.add(
+                            Label::new(meaning.color(t.ink))
+                                .truncate()
+                                .selectable(false),
+                        );
                     });
                 });
             });

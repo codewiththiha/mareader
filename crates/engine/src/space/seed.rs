@@ -1,6 +1,6 @@
 //! Made-up studied words in the first books, so shots and tests fill Space.
 
-use mareader_library::{BookId, LearnedBy, Library, MeaningBy, NewWord, WordStatus};
+use mareader_library::{BookId, LearnedBy, Library, MeaningBy, NewWord, RecallAnswer, WordStatus};
 
 const DAY_MS: u64 = 86_400_000;
 /// Taken in turn, so every tab has words.
@@ -102,6 +102,17 @@ pub(crate) fn seed(model: &mut Library, now_ms: u64) -> usize {
                 .unwrap_or_default(),
             tries: if recalled { 1 + (i % 3) as u8 } else { 0 },
             first_try: recalled && i.is_multiple_of(3),
+            answers: if lemma == "arcane" {
+                vec![RecallAnswer {
+                    text: "known by very few".into(),
+                    verdict: "Correct".into(),
+                    feedback: "That fits the sentence.".into(),
+                }]
+            } else {
+                Vec::new()
+            },
+            synonyms: if lemma == "arcane" { vec!["obscure".into()] } else { Vec::new() },
+            usages: if lemma == "arcane" { vec!["An arcane custom.".into()] } else { Vec::new() },
             ..NewWord::default()
         };
         let at = now_ms.saturating_sub(i as u64 * 9 * DAY_MS);
