@@ -89,8 +89,14 @@ fn header(ui: &mut Ui, filter: &mut NotesFilter, t: &Tokens) {
         ui.horizontal_top(|ui| {
             let wide = ui.available_width();
             let words = (wide - SEARCH_W - 24.0).max(wide * 0.5);
-            ui.allocate_ui_with_layout(vec2(words, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| header_words(ui, t));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| search(ui, filter));
+            ui.allocate_ui_with_layout(
+                vec2(words, 0.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| header_words(ui, t),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                search(ui, filter)
+            });
         });
     }
 }
