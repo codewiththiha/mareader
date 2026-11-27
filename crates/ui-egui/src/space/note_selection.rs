@@ -3,7 +3,7 @@
 use crate::icons::Icon;
 use crate::modal::{self, Dialog};
 use crate::theme::Tokens;
-use crate::ui_command::{Commands, Sent};
+use crate::ui_command::{Commands, Sent, UiCommand};
 use crate::widgets;
 use egui::{Context, RichText, Ui};
 use mareader_engine::command::Command;
@@ -51,10 +51,10 @@ impl Selection {
         };
         self.delete = Some((ids, false));
     }
-    pub fn menu(&mut self, hit: &egui::Response, id: MarkId, out: &mut Commands) {
+    pub fn menu(&mut self, hit: &egui::Response, id: MarkId, book: mareader_library::BookId, out: &mut Commands) {
         widgets::context_menu(hit, |ui| {
             if widgets::menu_row(ui, Icon::Book, "Go to note in book", None, false).clicked() {
-                out.push(Sent::Engine(Command::OpenMark(id)));
+                out.push(Sent::Ui(UiCommand::OpenSpaceNote { book, mark: id }));
             }
             let label = if self.selected(id) {
                 "Deselect"

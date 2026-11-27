@@ -1,7 +1,7 @@
 //! The reader's way back to the word that opened it.
 
 use egui::{Context, Frame, Id, Margin, Rect, RichText, Stroke};
-use mareader_engine::space::Filter;
+use mareader_engine::space::{Filter, NotesFilter};
 use mareader_library::BookId;
 
 use crate::activity::stack;
@@ -14,6 +14,7 @@ pub(super) struct Return {
     pub row: u128,
     pub filter: Filter,
     pub cards: bool,
+    pub notes: Option<NotesFilter>,
     started: Option<f64>,
 }
 
@@ -24,8 +25,15 @@ impl Return {
             row,
             filter,
             cards,
+            notes: None,
             started: None,
         }
+    }
+
+    pub fn notes(book: BookId, row: u128, filter: NotesFilter) -> Self {
+        let mut back = Self::new(book, row, Filter::default(), false, 0.0);
+        back.notes = Some(filter);
+        back
     }
 }
 
@@ -66,7 +74,8 @@ pub(super) fn show(ctx: &Context, back: &mut Return, pane: Rect, bar: bool) -> b
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         let icon = Icon::ChevronLeft.image(ui, 18.0).tint(t.ink);
-                        let text = if expanded { "Go back to vocabs" } else { "" };
+                        let label = if back.notes.is_some() { "Go back to notes" } else { "Go back to vocabs" };
+                        let text = if expanded { label } else { "" };
                         let button =
                             egui::Button::image_and_text(icon, RichText::new(text).color(t.ink))
                                 .frame(false);
@@ -75,7 +84,7 @@ pub(super) fn show(ctx: &Context, back: &mut Return, pane: Rect, bar: bool) -> b
                             egui::WidgetInfo::labeled(
                                 egui::WidgetType::Button,
                                 true,
-                                "Go back to vocabs",
+                                label,
                             )
                         });
                         response.clicked()

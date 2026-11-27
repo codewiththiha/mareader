@@ -350,6 +350,10 @@ impl MareaderApp {
                     self.ui.find_on_open = Some((book, quote, ctx.input(|i| i.time)));
                 }
             }
+            UiCommand::OpenSpaceNote { book, mark } => {
+                self.ui.space.remember_note_return(book, mark.0);
+                self.apply(ctx, Sent::Engine(Command::OpenMark(mark)));
+            }
             UiCommand::SpaceFor { room, book } => {
                 self.ui.space.focus(room, book);
                 self.apply(ctx, Sent::Engine(Command::ShowSpace(room)));

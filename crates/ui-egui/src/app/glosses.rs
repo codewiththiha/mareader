@@ -19,10 +19,8 @@ impl MareaderApp {
             if let Some((_, rect)) = self.ui.pane_rects.iter().find(|(id, _)| *id == pane) {
                 let bar =
                     !self.ui.chromeless && self.ui.page_bars.get(&pane).is_some_and(|b| b.shown());
-                if self.ui.space.show_return(ctx, book, *rect, bar) {
-                    out.push(Sent::Engine(Command::ShowSpace(
-                        mareader_engine::space::Room::Words,
-                    )));
+                if let Some(room) = self.ui.space.show_return(ctx, book, *rect, bar) {
+                    out.push(Sent::Engine(Command::ShowSpace(room)));
                 }
             }
         }

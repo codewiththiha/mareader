@@ -97,6 +97,8 @@ pub enum UiCommand {
         quote: String,
         row: u128,
     },
+    /// Opens a note and remembers where to return in Space.
+    OpenSpaceNote { book: mareader_library::BookId, mark: mareader_library::MarkId },
     /// Opens a Space room on one book's notes or words: a library card's.
     SpaceFor {
         room: mareader_engine::space::Room,
@@ -193,6 +195,7 @@ fn chrome_reads(ui: &UiCommand) -> bool {
         | U::ShowFind
         | U::FindInBook { .. }
         | U::FindVocabInBook { .. }
+        | U::OpenSpaceNote { .. }
         | U::SpaceFor { .. }
         | U::ShowOpenDialog(_)
         | U::LibraryDialog(_)

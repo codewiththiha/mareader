@@ -15,7 +15,7 @@ use std::sync::Arc;
 use super::{look, note_selection::Selection, top};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
-use crate::ui_command::{Commands, Sent};
+use crate::ui_command::{Commands, Sent, UiCommand};
 use crate::widgets;
 
 /// The page's own label, which tests and the titlebar find it by.
@@ -41,6 +41,7 @@ pub(super) fn column(
     (view, filter): (&NotesView, &mut NotesFilter),
     (look, narrow): (&HighlightSettings, bool),
     selection: &mut Selection,
+    reveal: &mut Option<(u128, bool, f64)>,
     t: &Tokens,
     out: &mut Commands,
 ) {
@@ -68,7 +69,7 @@ pub(super) fn column(
     ui.spacing_mut().item_spacing.y = 10.0;
     for group in &view.groups {
         heading(ui, group, t);
-        sheet(ui, group, look, selection, t, out);
+        sheet(ui, group, look, selection, reveal, t, out);
         ui.add_space(8.0);
     }
     selection.finish();
@@ -135,6 +136,7 @@ fn sheet(
     group: &NoteGroup,
     look: &HighlightSettings,
     selection: &mut Selection,
+    reveal: &mut Option<(u128, bool, f64)>,
     t: &Tokens,
     out: &mut Commands,
 ) {
@@ -149,8 +151,8 @@ fn sheet(
         let last = group.rows.len().saturating_sub(1);
         for (i, row) in group.rows.iter().enumerate() {
             let ends = (i == 0, i == last);
-            if line(ui, row, (look, ends), selection, t, out) {
-                out.push(Sent::Engine(Command::OpenMark(row.id)));
+            if line(ui, row, (look, ends), selection, reveal, t, out) {
+                out.push(Sent::Ui(UiCommand::OpenSpaceNote { book: row.book, mark: row.id }));
             }
             if i < last {
                 let rule = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
@@ -168,6 +170,7 @@ fn line(
     row: &NoteRow,
     (look, ends): (&HighlightSettings, (bool, bool)),
     selection: &mut Selection,
+    reveal: &mut Option<(u128, bool, f64)>,
     t: &Tokens,
     out: &mut Commands,
 ) -> bool {
@@ -220,7 +223,14 @@ fn line(
     if rect.intersect(ui.clip_rect()).is_positive() {
         selection.visible(row.id);
     }
-    selection.menu(&r, row.id, out);
+    if let Some((key, pending, _)) = reveal
+        && *key == row.id.0 && *pending
+    {
+        ui.scroll_to_rect(rect, Some(egui::Align::Center));
+        *pending = false;
+    }
+    super::locateglow::draw(ui, rect, row.id.0, reveal, t);
+    selection.menu(&r, row.id, row.book, out);
     if r.clicked() && selection.active() {
         selection.toggle(row.id);
         false

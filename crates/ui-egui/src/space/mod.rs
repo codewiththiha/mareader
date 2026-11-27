@@ -63,6 +63,7 @@ pub struct SpaceUi {
     selection_filter: Option<(Filter, bool)>,
     return_to: Option<returning::Return>,
     reveal: Option<(u128, bool, f64)>,
+    note_reveal: Option<(u128, bool, f64)>,
     delete_ai: Option<Vec<(String, Option<String>)>>,
     delete_ticket: Option<mareader_dict::Ticket>,
     delete_error: Option<String>,
@@ -147,27 +148,35 @@ impl SpaceUi {
         ));
     }
 
+    pub fn remember_note_return(&mut self, book: BookId, row: u128) {
+        self.return_to = Some(returning::Return::notes(book, row, self.notes.clone()));
+    }
+
     pub fn show_return(
         &mut self,
         ctx: &egui::Context,
         book: Option<BookId>,
         rect: Rect,
         bar: bool,
-    ) -> bool {
-        let Some(back) = &mut self.return_to else {
-            return false;
-        };
+    ) -> Option<Room> {
+        let back = self.return_to.as_mut()?;
         if Some(back.book) != book || !returning::show(ctx, back, rect, bar) {
-            return false;
+            return None;
         }
-        if let Some(back) = self.return_to.take() {
+        let back = self.return_to.take()?;
+        let reveal = Some((back.row, true, ctx.input(|i| i.time) + 5.0));
+        if let Some(filter) = back.notes {
+            self.notes = filter;
+            self.note_reveal = reveal;
+            self.notes_selection = note_selection::Selection::default();
+            Some(Room::Notes)
+        } else {
             self.filter = back.filter;
             self.cards = back.cards;
-            self.reveal = Some((back.row, true, ctx.input(|i| i.time) + 5.0));
+            self.reveal = reveal;
             self.selection = selection::Selection::default();
-            return true;
+            Some(Room::Words)
         }
-        false
     }
 
     pub fn escape(&mut self, ctx: &egui::Context) -> bool {
@@ -274,6 +283,9 @@ impl SpaceUi {
             self.notes_selection = note_selection::Selection::default();
             self.notes_selection_filter = Some(self.notes.clone());
         }
+        if self.note_reveal.as_ref().is_some_and(|r| ui.ctx().input(|i| i.time) > r.2) {
+            self.note_reveal = None;
+        }
         let view = space::notes(from.lib, &self.notes);
         let book = &mut self.notes.book;
         let main = rail(ui, page, t, |ui| {
@@ -294,6 +306,7 @@ impl SpaceUi {
                     (&view, filter),
                     (from.look, narrow),
                     &mut self.notes_selection,
+                    &mut self.note_reveal,
                     t,
                     out,
                 );

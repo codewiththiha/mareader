@@ -70,7 +70,8 @@ fn a_chip_and_a_book_narrow_the_rows() {
 fn note_context_selection_and_two_step_delete() {
     let mut h = marked("notes");
     let before = h.state().session().library_model().every_mark().count();
-    h.get_by_label("Open The mind is its own place.").click_secondary();
+    h.get_by_label("Open The mind is its own place.")
+        .click_secondary();
     h.run_steps(4);
     h.get_by_label("Select").click();
     h.run_steps(4);
@@ -78,8 +79,14 @@ fn note_context_selection_and_two_step_delete() {
     h.run_steps(4);
     h.get_by_label("Delete").click();
     h.run_steps(4);
-    assert_eq!(h.state().session().library_model().every_mark().count(), before);
+    assert_eq!(
+        h.state().session().library_model().every_mark().count(),
+        before
+    );
     h.get_by_label("Are you sure?").click();
     h.run_steps(6);
-    assert_eq!(h.state().session().library_model().every_mark().count(), before - 1);
+    assert_eq!(
+        h.state().session().library_model().every_mark().count(),
+        before - 1
+    );
 }
