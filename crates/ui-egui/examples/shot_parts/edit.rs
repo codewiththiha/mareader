@@ -36,11 +36,16 @@ impl Finish {
             "crop" => self.crop = Some(rect(v, "crop")?),
             "resize" => {
                 let (w, h) = v.split_once('x').ok_or("resize=WxH")?;
-                self.resize = Some(egui::vec2(w.parse().map_err(|_| "resize width")?, h.parse().map_err(|_| "resize height")?));
+                self.resize = Some(egui::vec2(
+                    w.parse().map_err(|_| "resize width")?,
+                    h.parse().map_err(|_| "resize height")?,
+                ));
             }
             "late_wheel" => {
                 let n: Vec<f32> = v.split(',').filter_map(|n| n.parse().ok()).collect();
-                let [x, y, dy] = n.as_slice() else { return Err("late_wheel=x,y,points".into()); };
+                let [x, y, dy] = n.as_slice() else {
+                    return Err("late_wheel=x,y,points".into());
+                };
                 self.wheel = Some([*x, *y, *dy]);
             }
             _ => return Ok(false),

@@ -10,7 +10,7 @@ use crate::space::{look, sentence};
 use crate::theme::{self, Tokens};
 use crate::widgets;
 
-const SPLIT_FROM: f32 = 580.0;
+const SPLIT_FROM: f32 = 470.0;
 
 pub(super) fn show(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) -> bool {
     ui.set_width(ui.available_width());
@@ -19,10 +19,11 @@ pub(super) fn show(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) -> boo
     ui.add_space(8.0);
     ui.separator();
     let used = ui.cursor().top() - before;
-    egui::ScrollArea::vertical()
+    let scrolled = egui::ScrollArea::vertical()
         .id_salt("word-detail-scroll")
         .max_height((height - used).max(0.0))
         .show(ui, |ui| body(ui, detail, t, height));
+    widgets::scroll_fades(ui, &scrolled, t.card);
     close
 }
 
@@ -78,7 +79,7 @@ fn body(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) {
             LearnedBy::Reactive if detail.row.tries == 1 => "Recall · 1 try".to_owned(),
             LearnedBy::Reactive => format!("Recall · {} tries", detail.row.tries),
         };
-        look::quiet(ui, &by, t.text_small, t);
+        ui.add(Label::new(RichText::new(&by).size(t.text_small).color(t.muted)).extend());
     });
     look::quiet(
         ui,
@@ -90,7 +91,7 @@ fn body(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) {
     if ui.available_width() >= SPLIT_FROM {
         ui.columns(2, |columns| {
             if let [left, right] = columns {
-                core(left, detail, t);
+                core(left, detail, t, height);
                 if has_recall(detail) {
                     left.add_space(14.0);
                     extra(left, detail, t);
@@ -101,7 +102,7 @@ fn body(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) {
             }
         });
     } else {
-        core(ui, detail, t);
+        core(ui, detail, t, height);
         ui.add_space(12.0);
         recall(ui, detail, t, height);
         ui.add_space(12.0);
@@ -110,7 +111,7 @@ fn body(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) {
     ui.add_space(10.0);
 }
 
-fn core(ui: &mut Ui, detail: &Detail, t: &Tokens) {
+fn core(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) {
     look::caption(ui, "Meaning", t);
     let meaning = if detail.row.meaning.is_empty() {
         "No saved meaning."
@@ -131,7 +132,7 @@ fn core(ui: &mut Ui, detail: &Detail, t: &Tokens) {
                 ui.add_space(3.0);
                 let scrolled = egui::ScrollArea::vertical()
                     .id_salt(("word-detail-context", detail.row.key))
-                    .max_height(104.0)
+                    .max_height((height * 0.22).clamp(56.0, 104.0))
                     .show(ui, |ui| {
                         ui.add(
                             Label::new(sentence::highlight(
@@ -259,7 +260,12 @@ fn recall(ui: &mut Ui, detail: &Detail, t: &Tokens, height: f32) {
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             if detail.history.is_empty() {
-                look::quiet(ui, "Answer text wasn't saved for earlier recalls.", t.text_small + 1.0, t);
+                look::quiet(
+                    ui,
+                    "Answer text wasn't saved for earlier recalls.",
+                    t.text_small + 1.0,
+                    t,
+                );
                 return;
             }
             let scrolled = egui::ScrollArea::vertical()

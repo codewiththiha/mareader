@@ -175,11 +175,11 @@ fn narrow_word_details_scroll_without_moving_the_header() {
     let mut h = words();
     h.get_by_label("Details for arcane").click();
     h.run_steps(30);
-    h.set_size(egui::vec2(620.0, 680.0));
+    h.set_size(egui::vec2(420.0, 500.0));
     h.run_steps(15);
     let before = h.get_by_label("Correct").rect().top();
     let close = h.get_by_label("Close word details").rect();
-    h.hover_at(egui::pos2(310.0, 400.0));
+    h.hover_at(egui::pos2(30.0, 350.0));
     h.event(egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,
         delta: egui::vec2(0.0, -250.0),
