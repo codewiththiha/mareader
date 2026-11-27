@@ -76,9 +76,14 @@ pub(super) fn column(
     }
     ui.add_space(4.0);
     if view.shown == 0 {
-        let (title, hint) = match view.total {
-            0 => ("No notes yet", NONE_YET),
-            _ => ("No notes match", NONE_MATCH),
+        let (title, hint) = if filter.kept == Kept::Ai && view.counts[Kept::Ai as usize] == 0 {
+            ("No AI selection results yet", "Save an AI answer on a selection while reading.")
+        } else if filter.kept == Kept::Ai {
+            ("No AI results match", NONE_MATCH)
+        } else if view.total == 0 {
+            ("No notes yet", NONE_YET)
+        } else {
+            ("No notes match", NONE_MATCH)
         };
         widgets::panel_empty(ui, Some(Icon::Note), title, hint);
         return;

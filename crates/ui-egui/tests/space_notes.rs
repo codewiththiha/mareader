@@ -113,6 +113,7 @@ fn ai_selection_answers_can_be_selected_and_deleted() {
     h.run_steps(6);
     assert!(h.query_by_label("AI selection results 0").is_some());
     assert!(h.query_by_label("A selected passage").is_none());
+    assert!(h.query_by_label("No AI selection results yet").is_some());
 }
 
 #[test]
@@ -259,37 +260,66 @@ fn saved_ai_selection_opens_and_returns_to_its_tab() -> Result<(), Box<dyn std::
     use mareader_engine::{command::Command, library::Action, route::Route, skills::Anchor};
     use mareader_ui_egui::{glow, ui_command::Sent};
     let raven = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../epub/tests/books/the-raven-gutenberg-17192.epub").canonicalize()?;
+        .join("../epub/tests/books/the-raven-gutenberg-17192.epub")
+        .canonicalize()?;
     let mut h = reader(&[("epub", raven.to_str().ok_or("UTF-8 path")?)]);
     h.set_size(egui::vec2(1280.0, 900.0));
     h.run_steps(30);
     let pane = h.state().active_pane();
-    let document = h.state().session().documents().document_of(pane).ok_or("document")?;
-    let (page, text) = (0..document.page_count()).find_map(|page| {
-        let layer = document.text_layer(page).ok()?;
-        let start = (0..layer.text.len().saturating_sub(25))
-            .find(|&i| (i..i + 25).all(|n| layer.place(n).is_some()))?;
-        let text = layer.text.text(start..start + 25);
-        (!text.trim().is_empty()).then_some((page, text))
-    }).ok_or("selectable EPUB text")?;
-    h.state_mut().queue(Sent::Engine(Command::SelectText { pane, page, text }));
+    let document = h
+        .state()
+        .session()
+        .documents()
+        .document_of(pane)
+        .ok_or("document")?;
+    let (page, text) = (0..document.page_count())
+        .find_map(|page| {
+            let layer = document.text_layer(page).ok()?;
+            let start = (0..layer.text.len().saturating_sub(25))
+                .find(|&i| (i..i + 25).all(|n| layer.place(n).is_some()))?;
+            let text = layer.text.text(start..start + 25);
+            (!text.trim().is_empty()).then_some((page, text))
+        })
+        .ok_or("selectable EPUB text")?;
+    h.state_mut()
+        .queue(Sent::Engine(Command::SelectText { pane, page, text }));
     h.run_steps(5);
-    let source = h.state().session().documents().highlighted(pane).ok_or("selection")?.1;
-    h.state_mut().queue(Sent::Engine(Command::Library(Action::SeedAiNotes)));
-    h.state_mut().queue(Sent::Engine(Command::ShowSpace(Room::Notes)));
+    let source = h
+        .state()
+        .session()
+        .documents()
+        .highlighted(pane)
+        .ok_or("selection")?
+        .1;
+    h.state_mut()
+        .queue(Sent::Engine(Command::Library(Action::SeedAiNotes)));
+    h.state_mut()
+        .queue(Sent::Engine(Command::ShowSpace(Room::Notes)));
     h.run_steps(15);
     h.get_by_label("AI selection results 1").click();
     h.run_steps(5);
     h.get_by_label(&source).click();
     h.run_steps(80);
     assert_eq!(h.state().route(), Route::Reader);
-    let ask = h.state().skills().asks().iter().find(|a| a.pinned.is_some()).ok_or("restored answer")?;
+    let ask = h
+        .state()
+        .skills()
+        .asks()
+        .iter()
+        .find(|a| a.pinned.is_some())
+        .ok_or("restored answer")?;
     assert!(ask.open, "the saved answer is opened");
     assert!(matches!(&ask.anchor, Anchor::Text(spans) if !spans.is_empty()));
-    assert!(glow::shown(&h.ctx) > 0, "the reader shows the AI selection outline");
+    assert!(
+        glow::shown(&h.ctx) > 0,
+        "the reader shows the AI selection outline"
+    );
     h.get_by_label("Go back to notes").click();
     h.run_steps(8);
     assert_eq!(h.state().session().room(), Room::Notes);
-    assert!(h.query_by_label(&source).is_some(), "the AI tab is restored");
+    assert!(
+        h.query_by_label(&source).is_some(),
+        "the AI tab is restored"
+    );
     Ok(())
 }
