@@ -126,8 +126,10 @@ impl Page {
                     .enumerate()
                     .skip(range.start)
                     .take(range.end - range.start)
-                    .filter(|(at, _)| range.end - range.start == needle.chars
-                        || !self.soft.iter().any(|(soft, _)| *soft as usize == *at))
+                    .filter(|(at, _)| {
+                        range.end - range.start == needle.chars
+                            || !self.soft.iter().any(|(soft, _)| *soft as usize == *at)
+                    })
                     .map(|(_, c)| c);
                 actual.zip(case.chars()).all(|(a, b)| {
                     a.is_uppercase() == b.is_uppercase() && a.is_lowercase() == b.is_lowercase()
@@ -376,7 +378,11 @@ mod tests {
         assert_eq!(p.find(&needle).len(), 1);
         let needle = Needle::with_case("International", true).unwrap();
         assert_eq!(p.find(&needle).len(), 1);
-        assert_eq!(p.find(&Needle::with_case("Inter-national", true).unwrap()).len(), 1);
+        assert_eq!(
+            p.find(&Needle::with_case("Inter-national", true).unwrap())
+                .len(),
+            1
+        );
         assert_eq!(p.find(&Needle::new("fox").unwrap()).len(), 3);
         let overlap = page(&["aAa"]);
         assert_eq!(
