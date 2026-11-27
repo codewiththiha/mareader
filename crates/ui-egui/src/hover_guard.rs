@@ -31,12 +31,21 @@ pub fn near(ctx: &Context, p: Pos2, edge: Edge) -> bool {
     let pass = ctx.cumulative_pass_nr();
     let all: Vec<(u64, Rect, bool, bool)> = ctx.data(|d| d.get_temp(key())).unwrap_or_default();
     all.into_iter().any(|(at, r, sidebar, page_bar)| {
-        at + 1 >= pass && match edge {
-            Edge::Sidebar => sidebar && r.y_range().expand(CLEARANCE).contains(p.y)
-                && p.x <= r.right() && p.x >= r.left() - CLEARANCE * 2.0,
-            Edge::PageBar => page_bar && r.x_range().expand(CLEARANCE).contains(p.x)
-                && p.y >= r.top() && p.y - r.bottom() < 36.0,
-        }
+        at + 1 >= pass
+            && match edge {
+                Edge::Sidebar => {
+                    sidebar
+                        && r.y_range().expand(CLEARANCE).contains(p.y)
+                        && p.x <= r.right()
+                        && p.x >= r.left() - CLEARANCE * 2.0
+                }
+                Edge::PageBar => {
+                    page_bar
+                        && r.x_range().expand(CLEARANCE).contains(p.x)
+                        && p.y >= r.top()
+                        && p.y - r.bottom() < 36.0
+                }
+            }
     })
 }
 

@@ -84,7 +84,14 @@ impl Search {
         self.ask_case(wake, doc, document, query, false);
     }
 
-    pub fn ask_case(&mut self, wake: Waker, doc: DocId, document: &Arc<Document>, query: &str, case_sensitive: bool) {
+    pub fn ask_case(
+        &mut self,
+        wake: Waker,
+        doc: DocId,
+        document: &Arc<Document>,
+        query: &str,
+        case_sensitive: bool,
+    ) {
         let key = Arc::as_ptr(document).addr();
         let at = self.jobs.iter().position(|j| j.doc == doc && j.key == key);
         let mut job = match at {
@@ -106,7 +113,8 @@ impl Search {
             job.asked = query.to_owned();
             job.case_sensitive = case_sensitive;
             job.asks += 1;
-            job.work.ask(job.asks, query, case_sensitive, &mut job.found);
+            job.work
+                .ask(job.asks, query, case_sensitive, &mut job.found);
         }
         self.jobs.push(job);
         if self.jobs.len() > KEEP {

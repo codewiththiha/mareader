@@ -110,12 +110,17 @@ impl Page {
         }
         if let Some(case) = &needle.case {
             hits.retain(|range| {
-                let actual = self.shown.chars().enumerate()
-                    .skip(range.start).take(range.end - range.start)
+                let actual = self
+                    .shown
+                    .chars()
+                    .enumerate()
+                    .skip(range.start)
+                    .take(range.end - range.start)
                     .filter(|(at, _)| !self.soft.iter().any(|(soft, _)| *soft as usize == *at))
                     .map(|(_, c)| c);
-                actual.zip(case.chars()).all(|(a, b)| a.is_uppercase() == b.is_uppercase()
-                    && a.is_lowercase() == b.is_lowercase())
+                actual.zip(case.chars()).all(|(a, b)| {
+                    a.is_uppercase() == b.is_uppercase() && a.is_lowercase() == b.is_lowercase()
+                })
             });
         }
         hits
@@ -297,13 +302,23 @@ impl Needle {
             }
             for c in word.chars().filter(|c| !invisible(*c)) {
                 match spell(c) {
-                    Some(letters) => { folded.extend(letters.chars().map(fold)); original.push_str(letters); },
-                    None => { folded.push(fold(c)); original.push(c); },
+                    Some(letters) => {
+                        folded.extend(letters.chars().map(fold));
+                        original.push_str(letters);
+                    }
+                    None => {
+                        folded.push(fold(c));
+                        original.push(c);
+                    }
                 }
             }
         }
         let chars = folded.chars().count();
-        (chars > 0).then_some(Self { folded, chars, case: sensitive.then_some(original) })
+        (chars > 0).then_some(Self {
+            folded,
+            chars,
+            case: sensitive.then_some(original),
+        })
     }
 }
 

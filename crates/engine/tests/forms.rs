@@ -459,7 +459,7 @@ fn cases(at: &Session) -> Vec<(&'static str, String, Command)> {
             Command::Search {
                 pane,
                 query: "fox".into(),
-            case_sensitive: false,
+                case_sensitive: false,
             },
         ),
         (

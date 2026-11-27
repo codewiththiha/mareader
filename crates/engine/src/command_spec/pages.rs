@@ -63,7 +63,11 @@ pub(crate) fn copy(at: &Session, params: &Value) -> Result<Command, String> {
 pub(crate) fn search(at: &Session, params: &Value) -> Result<Command, String> {
     let pane = json::pane(at, params)?;
     let query = json::text(params, "query")?;
-    Ok(Command::Search { pane, query, case_sensitive: false })
+    Ok(Command::Search {
+        pane,
+        query,
+        case_sensitive: false,
+    })
 }
 
 /// `word.list`: the pages a word list is copied from.

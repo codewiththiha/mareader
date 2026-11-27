@@ -43,7 +43,7 @@ impl Sidebar {
                     if crate::hover_guard::rested(ctx, &mut self.edge_at, guarded) {
                         self.preview(ctx);
                     }
-                },
+                }
                 None => self.edge_at = None,
             }
             return;
@@ -73,5 +73,4 @@ impl Sidebar {
             ctx.request_repaint_after(std::time::Duration::from_secs_f64(HOVER_GRACE - waited));
         }
     }
-
 }

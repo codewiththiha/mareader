@@ -291,11 +291,24 @@ impl FindBar {
                         self.list = !self.list;
                         self.reveal = self.list;
                     }
-                    let case = egui::Button::new(RichText::new("Aa").strong().color(if self.case_sensitive { t.accent } else { t.ink }))
-                        .selected(self.case_sensitive)
-                        .min_size(vec2(KNOB, KNOB));
+                    let case = egui::Button::new(
+                        RichText::new("Aa").strong().color(if self.case_sensitive {
+                            t.accent
+                        } else {
+                            t.ink
+                        }),
+                    )
+                    .selected(self.case_sensitive)
+                    .min_size(vec2(KNOB, KNOB));
                     let case = ui.add(case);
-                    case.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, self.case_sensitive, "Match case"));
+                    case.widget_info(|| {
+                        egui::WidgetInfo::selected(
+                            egui::WidgetType::Button,
+                            true,
+                            self.case_sensitive,
+                            "Match case",
+                        )
+                    });
                     if case.on_hover_text("Match case").clicked() {
                         self.case_sensitive = !self.case_sensitive;
                         self.active = None;

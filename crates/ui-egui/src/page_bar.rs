@@ -57,7 +57,11 @@ impl PageBar {
         let band = Rect::from_min_max(pos2(pane.left(), pane.bottom() - reach), pane.max);
         let on = widgets::bare_pointer(ctx, own).filter(|&p| band.contains(p));
         let inside = match on {
-            Some(p) if !self.shown => crate::hover_guard::rested(ctx, &mut self.edge_at, crate::hover_guard::near(ctx, p, crate::hover_guard::Edge::PageBar)),
+            Some(p) if !self.shown => crate::hover_guard::rested(
+                ctx,
+                &mut self.edge_at,
+                crate::hover_guard::near(ctx, p, crate::hover_guard::Edge::PageBar),
+            ),
             Some(_) => true,
             None => {
                 self.edge_at = None;
@@ -77,8 +81,6 @@ impl PageBar {
             }
         }
     }
-
-
 }
 
 /// The counter's text: "3 / 20", "3 / 12+" while loading, or "15%".

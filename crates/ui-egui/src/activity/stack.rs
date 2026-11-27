@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use egui::text::{LayoutJob, TextWrapping};
-use egui::{Context, FontId, Galley, Id, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
+use egui::{Context, FontId, Galley, Id, Pos2, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 use mareader_engine::activity::{End, Key, Row, Stage};
 use mareader_workspace::PaneId;
 
@@ -203,8 +203,13 @@ pub fn top(ctx: &Context, pane: Rect) -> Option<f32> {
     let pass = ctx.cumulative_pass_nr();
     let kept: Vec<(u64, Rect)> = ctx.data(|d| d.get_temp(standing_id())).unwrap_or_default();
     kept.into_iter()
-        .filter(|(at, r)| at + 1 >= pass && r.intersects(pane)
-            && r.x_range().expand(COLUMN).contains(pane.left() + INSET + SIDE / 2.0))
+        .filter(|(at, r)| {
+            at + 1 >= pass
+                && r.intersects(pane)
+                && r.x_range()
+                    .expand(COLUMN)
+                    .contains(pane.left() + INSET + SIDE / 2.0)
+        })
         .map(|(_, r)| r.top())
         .reduce(f32::min)
 }
