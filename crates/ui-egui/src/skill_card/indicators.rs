@@ -41,7 +41,13 @@ impl<'a> Indicators<'a> {
         }
     }
 
-    pub(super) fn push(&mut self, ask: &'a Ask, panes: &[(PaneId, Rect)], docs: DocumentsView<'_>) {
+    pub(super) fn push(
+        &mut self,
+        ask: &'a Ask,
+        panes: &[(PaneId, Rect)],
+        docs: DocumentsView<'_>,
+        page_ai: crate::page_ai::PageAiView<'_>,
+    ) {
         if docs
             .reading(ask.pane)
             .is_none_or(|r| r.doc.get() != ask.doc)
@@ -62,6 +68,9 @@ impl<'a> Indicators<'a> {
             return;
         };
         for sheet in docs.sheets(ask.pane) {
+            if page_ai.shows(ask.pane, sheet.page) {
+                continue;
+            }
             let at = spans
                 .iter()
                 .filter(|(page, _)| *page == sheet.page)

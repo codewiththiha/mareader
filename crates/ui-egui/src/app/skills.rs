@@ -41,7 +41,15 @@ impl MareaderApp {
         let bar = self.ui.titlebar.band_bottom(ctx);
         let split = self.tree().len() > 1;
         let reserve = crate::panes::close_reserve(split, theme::Tokens::get(ctx).control);
-        crate::skill_card::show(ctx, asks, (&self.ui.pane_rects, docs), (bar, reserve), out);
+        let page_ai = crate::page_ai::PageAiView::new(self.session.page_ai(), &self.ui.page_ai);
+        crate::skill_card::show(
+            ctx,
+            asks,
+            (&self.ui.pane_rects, docs),
+            (bar, reserve),
+            page_ai,
+            out,
+        );
     }
 
     /// An answer landed: in sight it shows itself; out of sight, the AI

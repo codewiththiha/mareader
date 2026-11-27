@@ -79,35 +79,44 @@ pub fn show(
         prefer: Side::Above,
     };
     let parent = ctx.memory(|m| m.area_rect(id));
-    let (_, pressed) = bubble.show(ctx, &t, |ui, cap| {
-        let _act = anim::announce(ui, Act::Hover);
-        let height = HEIGHT.min(cap).max(0.0);
-        let height = if restricted {
-            height.min(108.0)
-        } else {
-            height
-        };
-        ui.set_height(height);
-        if height < 84.0 {
-            ScrollArea::vertical()
-                .id_salt("selection-tiny")
-                .max_height(height)
-                .show(ui, |ui| {
-                    contents(ui, look, &custom, &mut pen, &t, 84.0, (restricted, parent))
-                })
-                .inner
-        } else {
-            contents(
-                ui,
-                look,
-                &custom,
-                &mut pen,
-                &t,
-                height,
-                (restricted, parent),
-            )
-        }
-    });
+    let (_, pressed) =
+        bubble.show_with_side(ctx, &t, crate::bubble::SELECTION_GAP, |ui, cap, side| {
+            let _act = anim::announce(ui, Act::Hover);
+            let height = HEIGHT.min(cap).max(0.0);
+            let height = if restricted {
+                height.min(108.0)
+            } else {
+                height
+            };
+            ui.set_height(height);
+            if height < 84.0 {
+                ScrollArea::vertical()
+                    .id_salt("selection-tiny")
+                    .max_height(height)
+                    .show(ui, |ui| {
+                        contents(
+                            ui,
+                            look,
+                            &custom,
+                            &mut pen,
+                            &t,
+                            84.0,
+                            (restricted, parent, side),
+                        )
+                    })
+                    .inner
+            } else {
+                contents(
+                    ui,
+                    look,
+                    &custom,
+                    &mut pen,
+                    &t,
+                    height,
+                    (restricted, parent, side),
+                )
+            }
+        });
     if pen != was {
         ctx.request_repaint();
     }
@@ -122,14 +131,34 @@ fn contents(
     pen: &mut Option<Pen>,
     t: &Tokens,
     height: f32,
-    (restricted, parent): (bool, Option<Rect>),
+    (restricted, parent, side): (bool, Option<Rect>, Side),
 ) -> Option<BarPress> {
-    let mut pressed = None;
     ui.spacing_mut().item_spacing.y = 1.0;
     let palette = if pen.is_some() { 25.0 } else { 0.0 };
-    let bottom = 37.0 + palette;
-    let actions = 46.0;
-    let body = (height - bottom - actions).max(0.0);
+    let body = (height - 37.0 - palette - 46.0).max(0.0);
+    let mut pressed = None;
+    if side == Side::Below {
+        pressed = common(ui, look, pen, t, restricted, true);
+        widgets::menu_rule(ui);
+    }
+    let skill = skills_body(ui, custom, t, body, restricted, parent);
+    pressed = pressed.or(skill);
+    if side == Side::Above {
+        widgets::menu_rule(ui);
+        pressed = pressed.or(common(ui, look, pen, t, restricted, false));
+    }
+    pressed
+}
+
+fn skills_body(
+    ui: &mut Ui,
+    custom: &[(Skill, String)],
+    t: &Tokens,
+    body: f32,
+    restricted: bool,
+    parent: Option<Rect>,
+) -> Option<BarPress> {
+    let mut pressed = None;
     ScrollArea::vertical()
         .id_salt("selection-skills")
         .max_height(body)
@@ -145,9 +174,24 @@ fn contents(
                 pressed = pressed.take().or(builtin).or(own);
             }
         });
-    widgets::menu_rule(ui);
-    let action = action_row(ui, restricted);
-    pressed = pressed.or(action);
+    pressed
+}
+
+fn common(
+    ui: &mut Ui,
+    look: &HighlightSettings,
+    pen: &mut Option<Pen>,
+    t: &Tokens,
+    restricted: bool,
+    reverse: bool,
+) -> Option<BarPress> {
+    let mut pressed = None;
+    if reverse {
+        pressed = bottom_actions(ui, look, pen);
+    }
+    if !reverse {
+        pressed = action_row(ui, restricted);
+    }
     if let Some(p) = *pen {
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
@@ -158,8 +202,12 @@ fn contents(
             }
         });
     }
-    let bottom = bottom_actions(ui, look, pen);
-    pressed.or(bottom)
+    let last = if reverse {
+        action_row(ui, restricted)
+    } else {
+        bottom_actions(ui, look, pen)
+    };
+    pressed.or(last)
 }
 
 fn action_row(ui: &mut Ui, restricted: bool) -> Option<BarPress> {

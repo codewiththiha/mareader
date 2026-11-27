@@ -1,5 +1,6 @@
 //! The notes panel: a book's highlights and notes, by chapter, searchable.
 
+mod selection;
 mod share;
 
 use crate::documents::Reading;
@@ -14,7 +15,7 @@ use egui::{
 };
 use mareader_appearance::Rgb;
 use mareader_engine::command::Command;
-use mareader_engine::skills::{Action as SkillAction, AskId};
+use mareader_engine::skills::AskId;
 use mareader_engine::study::Action;
 use mareader_library::{MarkId, Pen, Spot};
 use mareader_session::Document;
@@ -252,7 +253,7 @@ pub fn show(
                 }
             }
             for answer in shown_ai {
-                selection_entry(ui, answer, out);
+                selection::entry(ui, answer, out);
             }
             ui.add_space(12.0);
         });
@@ -282,23 +283,6 @@ fn filters(
             }
         });
     });
-}
-
-fn selection_entry(ui: &mut Ui, answer: &SelectionRow, out: &mut Commands) {
-    let state = match (answer.pinned, answer.pin_status) {
-        (false, _) => "This session",
-        (true, mareader_engine::library::SaveStatus::Pending) => "Saving…",
-        (true, mareader_engine::library::SaveStatus::Failed) => "Save failed",
-        (true, mareader_engine::library::SaveStatus::Saved) => "Pinned",
-    };
-    let label = format!("{} · {state}\n{}", answer.name, answer.source);
-    let response = ui.add_enabled(answer.found, egui::Button::new(label).wrap());
-    if response.clicked() {
-        out.push(Sent::Engine(Command::Skill(SkillAction::Show(answer.id))));
-    }
-    if !answer.found {
-        ui.label("This passage could not be found in the current layout.");
-    }
 }
 
 /// The search over quotes, notes and chapters; Escape clears it.

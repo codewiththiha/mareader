@@ -138,9 +138,9 @@ pub fn show_beside<T: Clone>(
         open = false;
     }
     let mut picked = None;
-    let popup = popup(&resp, id.with("list"), open, spec.width, parent);
+    let (popup, list_h) = popup(&resp, id.with("list"), open, spec.width, parent);
     let shown = popup.show(|ui| {
-        picked = contents(ui, (&spec, id), &mut state, cell);
+        picked = contents(ui, (&spec, id), &mut state, list_h, cell);
         ui.layer_id()
     });
     let (pos, pressed) = ui.input(|i| (i.pointer.interact_pos(), i.pointer.any_pressed()));
@@ -178,7 +178,8 @@ fn popup<'a>(
     open: bool,
     width: f32,
     parent: Option<Rect>,
-) -> egui::Popup<'a> {
+) -> (egui::Popup<'a>, f32) {
+    let mut list_h = LIST_H;
     let mut popup = egui::Popup::from_response(resp)
         .id(popup_id)
         .open(open)
@@ -203,6 +204,8 @@ fn popup<'a>(
                 .anchor(anchor)
                 .align_alternatives(&[egui::RectAlign::LEFT_START]);
         } else {
+            let space = (parent.top() - room.top()).max(room.bottom() - parent.bottom());
+            list_h = (space - 4.0 - 14.0 - FIELD_H).clamp(0.0, LIST_H);
             popup = popup
                 .anchor(parent)
                 .align(egui::RectAlign::BOTTOM_START)
@@ -213,7 +216,7 @@ fn popup<'a>(
                 ]);
         }
     }
-    popup
+    (popup, list_h)
 }
 
 /// The open list: its search field over its items; the one picked.
@@ -221,6 +224,7 @@ fn contents<T: Clone>(
     ui: &mut Ui,
     (spec, id): (&Spec<'_, T>, Id),
     state: &mut State,
+    list_h: f32,
     cell: impl FnMut(&mut Ui, &T, &str) -> bool,
 ) -> Option<T> {
     crate::z_order::register_popup(ui.ctx(), ui.layer_id());
@@ -233,7 +237,7 @@ fn contents<T: Clone>(
         state.lit = 0;
     }
     let keys = (enter, step, &mut state.lit, state.keyboard);
-    list(ui, spec, &state.query, keys, cell)
+    list(ui, spec, &state.query, keys, list_h, cell)
 }
 
 /// Wakes the frame when a hovered list's grace runs out.
@@ -307,6 +311,7 @@ fn list<T: Clone>(
     spec: &Spec<'_, T>,
     query: &str,
     (enter, step, lit, keyboard): (bool, i8, &mut usize, bool),
+    list_h: f32,
     mut cell: impl FnMut(&mut Ui, &T, &str) -> bool,
 ) -> Option<T> {
     let find = query.trim().to_lowercase();
@@ -325,7 +330,7 @@ fn list<T: Clone>(
         .map(|(item, _)| item.clone())
         .filter(|_| enter);
     let light = Tokens::get(ui.ctx()).accent_soft;
-    ScrollArea::vertical().max_height(LIST_H).show(ui, |ui| {
+    ScrollArea::vertical().max_height(list_h).show(ui, |ui| {
         for (i, (item, name)) in found.iter().enumerate() {
             let under = ui.painter().add(Shape::Noop);
             let top = ui.cursor().top();

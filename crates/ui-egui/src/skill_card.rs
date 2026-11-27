@@ -63,13 +63,14 @@ pub fn show(
     asks: &[Ask],
     (panes, docs): (&[(PaneId, Rect)], DocumentsView<'_>),
     clearance: (f32, f32),
+    page_ai: crate::page_ai::PageAiView<'_>,
     out: &mut Commands,
 ) {
     let t = Tokens::get(ctx);
     let mut indicators = indicators::Indicators::new(clearance);
     for ask in asks {
         if !ask.open && ask.answer.landed() && matches!(ask.anchor, Anchor::Text(_)) {
-            indicators.push(ask, panes, docs);
+            indicators.push(ask, panes, docs, page_ai);
             continue;
         }
         let Some((at, room)) = in_view(ask, panes, docs) else {
@@ -95,7 +96,11 @@ pub fn show(
             snug: false,
             prefer: Side::Below,
         };
-        bubble.show(ctx, &t, |ui, cap| card(ui, ask, cap, &t, out));
+        let gap = match ask.anchor {
+            Anchor::Text(_) => crate::bubble::SELECTION_GAP,
+            Anchor::Spot { .. } => crate::bubble::GAP,
+        };
+        bubble.show_with_side(ctx, &t, gap, |ui, cap, _| card(ui, ask, cap, &t, out));
     }
     let hovered = indicators.show(ctx, out);
     crate::skill_outline::show(ctx, asks, panes, docs, &hovered);
@@ -145,7 +150,7 @@ fn header(ui: &mut Ui, ask: &Ask, t: &Tokens, out: &mut Commands) {
                 .color(t.ink);
             ui.add(egui::Label::new(name).truncate());
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let close = widgets::small_icon_button(ui, Icon::Close, "Close");
+                let close = widgets::icon_button(ui, Icon::Close, "Close", false);
                 if close.clicked() {
                     out.push(Sent::Engine(Command::Skill(Action::Close(ask.id))));
                 }
@@ -163,7 +168,7 @@ fn header(ui: &mut Ui, ask: &Ask, t: &Tokens, out: &mut Commands) {
                     if widgets::icon_button(ui, Icon::Pin, label, ask.pinned.is_some()).clicked() {
                         out.push(Sent::Engine(Command::Skill(Action::Pin(ask.id))));
                     }
-                    if widgets::small_icon_button(ui, Icon::Remove, "Remove answer").clicked() {
+                    if widgets::icon_button(ui, Icon::Remove, "Remove answer", false).clicked() {
                         out.push(Sent::Engine(Command::Skill(Action::Remove(ask.id))));
                     }
                 }

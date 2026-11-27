@@ -1,8 +1,9 @@
 # Selection AI: skills on a selection or a page
 
-Selecting text shows the fixed narrow selection menu, with skills above the
-other actions. It fits within the available pane and scrolls if needed; its
-size is not user-resizable.
+Selecting text shows the fixed narrow selection menu. Common actions sit
+nearest the selected text: below the skills when the menu is above it, and
+above the skills when the menu is below it. The menu fits within the pane
+and scrolls if needed; its size is not user-resizable.
 
 ## The skills
 
@@ -54,8 +55,9 @@ size is not user-resizable.
 - **Close and reopen.** Closing a selection answer hides its card without
   stopping the request. Once it has finished, a button at the page edge, level with the selection,
   names the skill and reopens its answer. Hovering it softly lights the related
-  selection. The buttons stay clear of page AI number buttons and each other. Unpinned answers stay for this app
-  session; Remove deletes one.
+  selection. They hide while the page shows a page-AI result and return on
+  the original page. They stay clear of page AI number buttons and each
+  other. Unpinned answers stay for this app session; Remove deletes one.
 - **Pin.** Selection answers can be pinned with their book and reopen after
   restart. New answers are pinned by default; Settings › Skills can change
   that. A file opened outside the library must be added before it can be
@@ -63,8 +65,10 @@ size is not user-resizable.
   A saved request interrupted by app exit offers Try again. A failed retry
   leaves the last successful saved answer intact.
 - **Annotations.** The Selection AI filter appears when the book has answers;
-  rows show pin state and reopen the selection. Changed or missing passages
-  cannot be opened at an unverified location.
+  rows show pin state and the selected text. Long passages start with a
+  180-character preview; click to expand or collapse it, or use Open answer
+  to reopen the card. Search still checks the full passage. Changed or
+  missing passages cannot be opened at an unverified location.
 - **Page-menu cards** remain temporary: closing them ends their run and at
   most eight are kept.
 - **Size.** Wider than the word card: from 360 to 560 points, growing with

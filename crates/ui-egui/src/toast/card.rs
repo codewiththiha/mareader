@@ -265,12 +265,7 @@ pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &m
         return;
     };
     let at = action_at(rect, card);
-    // A real button: the soft tone with a hairline of it, not a bare label.
-    let button = Button::new(action_job(ui.ctx(), live, swatch.mark))
-        .fill(swatch.soft)
-        .stroke(Stroke::new(1.0, swatch.mark.gamma_multiply(0.35)))
-        .corner_radius(7);
-    let pressed = ui.put(at, button).on_hover_cursor(CursorIcon::PointingHand);
+    let pressed = action_button(ui, at, live, swatch.mark);
     pressed.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, true, live.toast.label)
     });
@@ -278,6 +273,22 @@ pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &m
         out.push(Sent::Engine((**command).clone()));
         out.push(Sent::Ui(UiCommand::CloseToast(live.id)));
     }
+}
+
+/// A compact action, confined to the toast's control rectangle.
+fn action_button(ui: &mut Ui, at: Rect, live: &Live, mark: Color32) -> egui::Response {
+    let button = Button::new(action_job(ui.ctx(), live, mark))
+        .truncate()
+        .fill(look(live.toast.tone, &Tokens::get(ui.ctx())).soft)
+        .stroke(Stroke::new(1.0, mark.gamma_multiply(0.35)))
+        .corner_radius(7);
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding = Vec2::new(8.0, 2.0);
+        ui.spacing_mut().interact_size.y = 0.0;
+        ui.put(at, button)
+    })
+    .inner
+    .on_hover_cursor(CursorIcon::PointingHand)
 }
 
 #[cfg(test)]
@@ -350,6 +361,32 @@ mod tests {
         assert_eq!(area.bottom() - bed.bottom(), crate::page_bar::COUNTER_INSET);
         assert_eq!(bed.width(), 320.0);
         assert_eq!(bed.height(), 44.0);
+    }
+
+    #[test]
+    fn action_buttons_fit_the_compact_card() {
+        let ctx = Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let t = Tokens::new(&Appearance::default());
+            let mut toasts = super::super::Toasts::default();
+            for label in ["Open cards", "Undo"] {
+                let action = mareader_engine::study::Action::Restore(Vec::new());
+                let command = mareader_engine::command::Command::Study(action);
+                toasts
+                    .push(mareader_engine::toast::Toast::info("A message").action(label, command));
+                let live = toasts.live.last().unwrap();
+                let card = measure(ui.ctx(), live, super::super::WIDTH, &t);
+                let rect = Rect::from_min_size(pos2(0.0, 0.0), Vec2::new(320.0, HEIGHT));
+                let target = action_at(rect, &card);
+                let shown = action_button(ui, target, live, t.ink).rect;
+                assert!(
+                    rect.contains_rect(shown),
+                    "{label}: {shown:?} outside {rect:?}"
+                );
+                assert!(shown.height() <= ACTION_H + 0.1, "{label}: {shown:?}");
+            }
+        });
+        output.textures_delta.clear();
     }
 
     #[test]

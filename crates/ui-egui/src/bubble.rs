@@ -8,6 +8,8 @@ use crate::z_order::{self, Tier};
 
 /// From the words to the card's edge; the caret spans most of it.
 pub const GAP: f32 = 11.0;
+/// Clears the rainbow outline of a text selection.
+pub const SELECTION_GAP: f32 = 28.0;
 /// How far the caret reaches out of the card.
 const CARET: f32 = 8.0;
 /// The caret keeps this far from the card's rounded corners.
@@ -73,6 +75,17 @@ impl Bubble {
         t: &Tokens,
         add: impl FnOnce(&mut Ui, f32) -> R,
     ) -> (Rect, R) {
+        self.show_with_side(ctx, t, GAP, |ui, cap, _| add(ui, cap))
+    }
+
+    /// Draws a card at `gap`, exposing its chosen side to its content.
+    pub fn show_with_side<R>(
+        self,
+        ctx: &Context,
+        t: &Tokens,
+        gap: f32,
+        add: impl FnOnce(&mut Ui, f32, Side) -> R,
+    ) -> (Rect, R) {
         let memo_id = self.id.with("memo");
         let now = ctx.input(|i| i.time);
         let pass = ctx.cumulative_pass_nr();
@@ -84,8 +97,8 @@ impl Bubble {
         let mut memo = kept.filter(|m| m.pass + 1 >= pass).unwrap_or(fresh);
         let (at, room) = (self.at, self.room);
         let rooms = (
-            room.bottom() - at.bottom() - GAP - MARGIN,
-            at.top() - room.top() - GAP - MARGIN,
+            room.bottom() - at.bottom() - gap - MARGIN,
+            at.top() - room.top() - gap - MARGIN,
         );
         let need = (memo.height > 0.0).then_some(memo.height);
         // A card keeps its side only while its words and room stay put.
@@ -118,33 +131,15 @@ impl Bubble {
             .clamp(lo, (room.right() - MARGIN - half).max(lo));
         let lift = (1.0 - entrance(ctx, memo.opened, now, ENTER)) * LIFT;
         let (pos, pivot) = match side {
-            Side::Below => (pos2(x, at.bottom() + GAP + lift), Align2::CENTER_TOP),
-            Side::Above => (pos2(x, at.top() - GAP - lift), Align2::CENTER_BOTTOM),
+            Side::Below => (pos2(x, at.bottom() + gap + lift), Align2::CENTER_TOP),
+            Side::Above => (pos2(x, at.top() - gap - lift), Align2::CENTER_BOTTOM),
         };
         let shown = z_order::area(ctx, Tier::PageCard, self.id)
             .pivot(pivot)
             .fixed_pos(pos)
             .constrain(false)
             .sizing_pass(need.is_none())
-            .show(ctx, |ui| {
-                let frame = Frame::popup(ui.style())
-                    .fill(t.surface)
-                    .stroke(Stroke::new(1.0, t.line))
-                    .corner_radius(t.radius_lg)
-                    .inner_margin(self.margin)
-                    .show(ui, |ui| {
-                        if self.snug {
-                            ui.set_max_width(width);
-                        } else {
-                            ui.set_width(width);
-                        }
-                        // Areas offer last frame's size; streamed text grows.
-                        ui.set_max_height(cap);
-                        add(ui, cap)
-                    });
-                caret(ui, frame.response.rect, at.center().x, side, t);
-                frame.inner
-            });
+            .show(ctx, |ui| self.contents(ui, t, (width, cap), side, add));
         // Summoned over the page: toasts give it the room.
         crate::toast::keep_clear(ctx, shown.response.rect);
         memo.height = shown.response.rect.height();
@@ -155,6 +150,32 @@ impl Bubble {
         memo.placed = Some((at, room));
         ctx.data_mut(|d| d.insert_temp(memo_id, memo));
         (shown.response.rect, shown.inner)
+    }
+    fn contents<R>(
+        &self,
+        ui: &mut Ui,
+        t: &Tokens,
+        (width, cap): (f32, f32),
+        side: Side,
+        add: impl FnOnce(&mut Ui, f32, Side) -> R,
+    ) -> R {
+        let frame = Frame::popup(ui.style())
+            .fill(t.surface)
+            .stroke(Stroke::new(1.0, t.line))
+            .corner_radius(t.radius_lg)
+            .inner_margin(self.margin)
+            .show(ui, |ui| {
+                if self.snug {
+                    ui.set_max_width(width);
+                } else {
+                    ui.set_width(width);
+                }
+                // Areas offer last frame's size; streamed text grows.
+                ui.set_max_height(cap);
+                add(ui, cap, side)
+            });
+        caret(ui, frame.response.rect, self.at.center().x, side, t);
+        frame.inner
     }
 }
 

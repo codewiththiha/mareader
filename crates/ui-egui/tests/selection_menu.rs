@@ -318,3 +318,54 @@ fn skill_submenus_do_not_cover_the_selection_menu() {
         }
     }
 }
+
+#[test]
+fn answer_header_controls_share_size_and_alignment() {
+    let mut h = reader(&[("pdf", "sample:5"), ("skill_answers", "echo")]);
+    let pane = h.state().active_pane();
+    h.state_mut().queue(Sent::Engine(Command::SelectText {
+        pane,
+        page: 0,
+        text: "quick brown".into(),
+    }));
+    h.run_steps(10);
+    h.get_by_label("Simplify").click();
+    h.run_steps(30);
+    let remove = h.get_by_label("Remove answer").rect();
+    let pin = h.get_by_label("Pin answer").rect();
+    let close = h.get_by_label("Close").rect();
+    assert_eq!(remove.size(), pin.size());
+    assert_eq!(pin.size(), close.size());
+    assert!((remove.center().y - pin.center().y).abs() < 1.0);
+    assert!((close.center().y - pin.center().y).abs() < 1.0);
+}
+
+#[test]
+fn common_actions_remain_nearest_the_selection_on_either_side() {
+    for (text, below) in [("quick brown", false), ("Page 1 of 5", true)] {
+        let mut h = reader(&[("pdf", "sample:5")]);
+        let pane = h.state().active_pane();
+        let doc = h.state().documents().reading(pane).unwrap().doc;
+        h.state_mut().queue(Sent::Engine(Command::SelectText {
+            pane,
+            page: 0,
+            text: text.into(),
+        }));
+        h.run_steps(40);
+        let id = egui::Id::new(("study-bar", doc));
+        let side = mareader_ui_egui::bubble::Bubble::side_of(&h.ctx, id).unwrap();
+        assert_eq!(
+            side == mareader_ui_egui::bubble::Side::Below,
+            below,
+            "{text}"
+        );
+        let copy = h.get_by_label("Copy").rect();
+        let note = h.get_by_label("Note").rect();
+        let skills = h.get_by_label("Skills").rect();
+        if below {
+            assert!(copy.bottom() < note.top() && note.bottom() < skills.top());
+        } else {
+            assert!(skills.bottom() < note.top() && note.bottom() < copy.top());
+        }
+    }
+}

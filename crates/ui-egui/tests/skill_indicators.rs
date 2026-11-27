@@ -299,6 +299,12 @@ fn page_edge_stack_avoids_page_ai_and_hover_lights_one_answer() {
             .queue(Sent::Engine(Command::Skill(Action::Close(id))));
         h.run_steps(60);
     }
+    assert!(h.state().page_ai().shows(pane, 0));
+    assert!(h.query_by_label("Open Simplify answer").is_none());
+    assert!(h.query_by_label("Open Quiz me answer").is_none());
+    h.get_by_label("Simplified").click();
+    h.run_steps(30);
+    assert!(!h.state().page_ai().shows(pane, 0));
     let page = h.state().documents().sheets(pane)[0];
     let first = h.get_by_label("Open Simplify answer").rect();
     let second = h.get_by_label("Open Quiz me answer").rect();
@@ -326,6 +332,15 @@ fn page_edge_stack_avoids_page_ai_and_hover_lights_one_answer() {
     h.hover_at(egui::pos2(20.0, 300.0));
     h.run_steps(60);
     assert_eq!(mareader_ui_egui::glow::shown(&h.ctx), 0);
+    h.get_by_label("Simplified").click();
+    h.run_steps(30);
+    assert!(h.state().page_ai().shows(pane, 0));
+    assert!(h.query_by_label("Open Simplify answer").is_none());
+    assert!(h.query_by_label("Open Quiz me answer").is_none());
+    h.get_by_label("Simplified").click();
+    h.run_steps(30);
+    assert!(h.query_by_label("Open Simplify answer").is_some());
+    assert!(h.query_by_label("Open Quiz me answer").is_some());
 }
 
 #[test]
