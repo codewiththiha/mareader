@@ -17,7 +17,7 @@ use mareader_engine::page_ai::ledger::Ledger;
 use mareader_engine::page_ai::{Action, How, Slot};
 use mareader_engine::settings::Tab;
 use mareader_library::Library;
-use mareader_settings::{AiSettings, PageStart, PageTask, language_name};
+use mareader_settings::{AiSettings, PageTask};
 use mareader_workspace::PaneId;
 
 /// The language search field, for screen readers and tests.
@@ -138,7 +138,6 @@ impl PageAiUi {
             close = match step.clone() {
                 Step::Tasks => self.tasks(ui, ledger, &m, ai, &mut step, out),
                 Step::Languages => self.languages(ui, &m, ai, &mut step, out),
-                Step::How(task, tag) => self.how(ui, &m, (task, tag), &mut step, out),
             };
         });
         match (close, &mut self.menu) {
@@ -154,42 +153,39 @@ impl PageAiUi {
         rect
     }
 
-    /// The task as asked, or the next step when it should ask how.
+    /// Starts a page or picked pages without a second settings-dependent step.
     fn ask(
         m: &Menu,
-        ai: &AiSettings,
-        (task, tag): (PageTask, Option<String>),
-        step: &mut Step,
+        task: PageTask,
+        tag: Option<String>,
+        manual: bool,
+        continuous: bool,
         out: &mut Commands,
     ) -> bool {
-        // Picked pages are asked as they are, in groups.
         if !m.pages.is_empty() {
-            out.push(Sent::Engine(Command::PageAi(Action::RunPages {
-                pane: m.pane,
-                pages: m.pages.clone(),
-                task,
-                tag,
-            })));
+            let action = match (task, tag, manual) {
+                (PageTask::Translate, Some(tag), false) => Action::TranslatePagesCurrent {
+                    pane: m.pane,
+                    pages: m.pages.clone(),
+                    tag,
+                },
+                (task, tag, _) => Action::RunPages {
+                    pane: m.pane,
+                    pages: m.pages.clone(),
+                    task,
+                    tag,
+                },
+            };
+            out.push(Sent::Engine(Command::PageAi(action)));
             return true;
         }
-        let start = match task {
-            PageTask::Summarize => PageStart::Page,
-            PageTask::Translate => ai.tasks.translate.start,
-            PageTask::Simplify => ai.tasks.simplify.start,
-        };
-        let continuous = match start {
-            PageStart::Ask => {
-                *step = Step::How(task, tag);
-                return false;
-            }
-            PageStart::Page => false,
-            PageStart::Continuous => true,
-        };
         let how = How {
             continuous,
             remember: false,
         };
-        out.push(Sent::Engine(Command::PageAi(action(m, task, tag, how))));
+        out.push(Sent::Engine(Command::PageAi(action(
+            m, task, tag, how, manual,
+        ))));
         true
     }
 
@@ -210,7 +206,7 @@ impl PageAiUi {
         ledger: &Ledger,
         m: &Menu,
         ai: &AiSettings,
-        step: &mut Step,
+        _step: &mut Step,
         out: &mut Commands,
     ) -> bool {
         let t = Tokens::get(ui.ctx());
@@ -269,33 +265,44 @@ impl PageAiUi {
             1 => "1 page".to_owned(),
             n => format!("{n} pages"),
         };
-        // A task set to go on as one reads says so beside it.
-        let hint = |s| (s == PageStart::Continuous && !group).then_some("Continuous");
         let summarize = format!("Summarize {what}");
         if widgets::menu_row(ui, Icon::Summarize, &summarize, None, false).clicked() {
-            return Self::ask(m, ai, (PageTask::Summarize, None), step, out);
+            return Self::ask(m, PageTask::Summarize, None, false, false, out);
         }
-        let translate_hint = hint(ai.tasks.translate.start);
         let choices = crate::language_menu::offered(ui.ctx());
-        let current = choices.current.as_deref().and_then(language_name);
+        let current = choices
+            .current
+            .as_deref()
+            .and_then(mareader_settings::language_name);
         let to = format!("Translate {what}…");
-        let chosen = crate::language_menu::show(ui, &choices, |ui| {
-            widgets::menu_row_chevron(ui, Icon::Translate, &to, current.or(translate_hint))
+        let shown = crate::language_menu::show_beside_action(ui, &choices, self.menu_rect, |ui| {
+            widgets::menu_row_chevron(ui, Icon::Translate, &to, current)
         });
-        if let Some(tag) = chosen {
-            return Self::ask(m, ai, (PageTask::Translate, Some(tag)), step, out);
+        if let Some(tag) = shown.picked {
+            return Self::ask(m, PageTask::Translate, Some(tag), true, false, out);
         }
-        let simplify = hint(ai.tasks.simplify.start);
+        if shown.row.clicked()
+            && let Some(tag) = choices.current.clone()
+        {
+            return Self::ask(m, PageTask::Translate, Some(tag), false, false, out);
+        }
         let label = format!("Simplify {what}");
-        let simplify = widgets::menu_row(ui, Icon::Simplify, &label, simplify, false);
-        if simplify
+        if widgets::menu_row(ui, Icon::Simplify, &label, None, false)
             .on_hover_text("Rewrites the text in plain English")
             .clicked()
         {
-            return Self::ask(m, ai, (PageTask::Simplify, None), step, out);
+            return Self::ask(m, PageTask::Simplify, None, false, false, out);
         }
         if group {
             return false;
+        }
+        if widgets::menu_row(ui, Icon::Repeat, "Translate continuously", current, false).clicked()
+            && let Some(tag) = choices.current
+        {
+            return Self::ask(m, PageTask::Translate, Some(tag), false, true, out);
+        }
+        if widgets::menu_row(ui, Icon::Repeat, "Simplify continuously", None, false).clicked() {
+            return Self::ask(m, PageTask::Simplify, None, false, true, out);
         }
         if rows::custom(ui, m, ai, out) {
             return true;
@@ -322,72 +329,12 @@ impl PageAiUi {
         false
     }
 
-    /// This page, or on as the reader reads; true once one is picked.
-    fn how(
-        &mut self,
-        ui: &mut Ui,
-        m: &Menu,
-        (task, tag): (PageTask, Option<String>),
-        step: &mut Step,
-        out: &mut Commands,
-    ) -> bool {
-        let t = Tokens::get(ui.ctx());
-        let title = match (&task, tag.as_deref()) {
-            (PageTask::Translate, Some(tag)) => {
-                format!("Translate to {}", language_name(tag).unwrap_or(tag))
-            }
-            (PageTask::Translate, None) => "Translate".to_owned(),
-            (PageTask::Simplify, _) => "Simplify".to_owned(),
-            (PageTask::Summarize, _) => "Summarize".to_owned(),
-        };
-        if widgets::menu_row(ui, Icon::ChevronLeft, &title, None, false).clicked() {
-            *step = Step::Tasks;
-            return false;
-        }
-        widgets::menu_rule(ui);
-        let remember = self.remember;
-        let how = |continuous| How {
-            continuous,
-            remember,
-        };
-        let page = widgets::menu_row(ui, Icon::Book, "This page", None, false);
-        if page.clicked() {
-            out.push(Sent::Engine(Command::PageAi(action(
-                m,
-                task,
-                tag,
-                how(false),
-            ))));
-            return true;
-        }
-        let tip = "Does each page as you read on, a few pages ahead";
-        let on = widgets::menu_row(ui, Icon::Repeat, "Continuous", None, false);
-        if on.on_hover_text(tip).clicked() {
-            out.push(Sent::Engine(Command::PageAi(action(
-                m,
-                task,
-                tag,
-                how(true),
-            ))));
-            return true;
-        }
-        widgets::menu_rule(ui);
-        ui.horizontal(|ui| {
-            ui.add_space(ui.spacing().button_padding.x);
-            let label = RichText::new("Remember my choice").size(t.text_small);
-            widgets::checkbox(ui, &mut self.remember, label)
-                .on_hover_text("Change it later in Settings › AI");
-        });
-        ui.add_space(2.0);
-        false
-    }
-
     /// Every language, recent ones first; true once one is picked.
     fn languages(
         &mut self,
         ui: &mut Ui,
         m: &Menu,
-        ai: &AiSettings,
+        _ai: &AiSettings,
         step: &mut Step,
         out: &mut Commands,
     ) -> bool {
@@ -435,7 +382,7 @@ impl PageAiUi {
         let Some(tag) = picked else {
             return false;
         };
-        Self::ask(m, ai, (PageTask::Translate, Some(tag)), step, out)
+        Self::ask(m, PageTask::Translate, Some(tag), true, false, out)
     }
 
     fn bubble_menu(
@@ -678,16 +625,22 @@ fn page_popup(
 }
 
 /// The action a menu choice makes.
-fn action(m: &Menu, task: PageTask, tag: Option<String>, how: How) -> Action {
+fn action(m: &Menu, task: PageTask, tag: Option<String>, how: How, manual: bool) -> Action {
     let (pane, page) = (m.pane, m.page);
-    match (task, tag) {
-        (PageTask::Translate, Some(tag)) => Action::Translate {
+    match (task, tag, manual) {
+        (PageTask::Translate, Some(tag), false) => Action::TranslateCurrent {
             pane,
             page,
             tag,
             how,
         },
-        (task, _) => Action::Run {
+        (PageTask::Translate, Some(tag), true) => Action::Translate {
+            pane,
+            page,
+            tag,
+            how,
+        },
+        (task, _, _) => Action::Run {
             pane,
             page,
             task,

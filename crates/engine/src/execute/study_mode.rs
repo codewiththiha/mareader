@@ -111,6 +111,8 @@ pub(super) fn locks(session: &mut Session, intent: &Command) -> bool {
         Command::PageAi(
             PageAi::Run { pane, .. }
             | PageAi::Translate { pane, .. }
+            | PageAi::TranslateCurrent { pane, .. }
+            | PageAi::TranslatePagesCurrent { pane, .. }
             | PageAi::RunPages { pane, .. }
             | PageAi::PagesMenu { pane, .. }
             | PageAi::Redo { pane, .. },

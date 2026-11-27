@@ -197,7 +197,7 @@ fn translation_submenu_offers_recent_and_all_languages() {
     click(&mut h, 2, Modifiers::COMMAND);
     h.get_by_label("Page 2").click_secondary();
     h.run();
-    h.get_by_label("Translate").click();
+    h.get_by_label("Translate").hover();
     h.run();
     assert!(
         h.query_by_label("Language support is not verified for this model.")

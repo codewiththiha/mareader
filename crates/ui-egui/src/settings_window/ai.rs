@@ -3,8 +3,8 @@
 use egui::{Align, FontId, Layout, Sense, Ui, pos2, vec2};
 use mareader_assist::{Board, Job, Load};
 use mareader_settings::{
-    AiSettings, GlossDensity, GlossSettings, HighlightSettings, OrganizeTask, PageRun, PageStart,
-    PageTask, Pen, Provider, SummaryStyle, TaskId,
+    AiSettings, GlossDensity, GlossSettings, HighlightSettings, OrganizeTask, PageRun, Pen,
+    Provider, SummaryStyle, TaskId,
 };
 
 use super::highlights::{palette, preview};
@@ -25,7 +25,6 @@ pub(super) use pickers::{language_picker, preset_picker};
 const PICK_W: f32 = 240.0;
 const DICTIONARY: &str = TaskId::Explain.spec().label;
 const BOOKS_LANGUAGE: &str = "The book's language";
-const PICK_LATER: &str = "Pick when translating";
 /// Books per request Apple's small context holds.
 const APPLE_BATCH: u16 = 20;
 
@@ -45,7 +44,7 @@ pub fn tab(
     }
     dictionary(ui, ai, looks, board);
     library(ui, ai);
-    pages(ui, ai, board);
+    pages(ui, ai);
     busy::show(ui, ai);
 }
 
@@ -290,22 +289,34 @@ fn library(ui: &mut Ui, ai: &mut AiSettings) {
 }
 
 /// Selection AI's model, the built-ins' options, and how pages go on.
-fn pages(ui: &mut Ui, ai: &mut AiSettings, board: Option<&Board>) {
+fn pages(ui: &mut Ui, ai: &mut AiSettings) {
     section_help(
         ui,
         "Selections and pages",
         &[("", "A skill can ask a model of its own; see Skills.")],
     );
-    let apple = ai
-        .page_model(PageTask::Translate)
-        .is_some_and(|p| p.provider == Provider::Apple);
-    let state = board.and_then(|b| b.apple.ready()).filter(|_| apple);
-    let speaks = |tag: &str| state.and_then(|s| s.speaks(tag));
     group(ui, |ui| {
         for task in placed(Home::Pages) {
             model_row(ui, ai, task);
         }
-        page_rows(ui, ai, &speaks);
+        divider(ui);
+        row(ui, "Summary style", "Paragraphs, or a short list", |ui| {
+            let style = &mut ai.tasks.summarize.style;
+            let label = |s| match s {
+                SummaryStyle::Paragraphs => "Paragraphs",
+                SummaryStyle::Points => "Key points",
+            };
+            let items =
+                [SummaryStyle::Paragraphs, SummaryStyle::Points].map(|s| (s, label(s).to_owned()));
+            crate::dropdown::select(
+                ui,
+                egui::Id::new("ai-summary-style"),
+                label(*style),
+                PICK_W,
+                style,
+                &items,
+            );
+        });
     });
     section_help(
         ui,
@@ -343,93 +354,4 @@ fn pages(ui: &mut Ui, ai: &mut AiSettings, board: Option<&Board>) {
             run.per_request = n.round().clamp(1.0, hi) as u8;
         });
     });
-    let chosen = ai.tasks.translate.language.as_deref();
-    let name = chosen.and_then(mareader_settings::language_name);
-    if let (Some(tag), Some(name)) = (chosen, name)
-        && speaks(tag) == Some(false)
-    {
-        note(
-            ui,
-            &format!("Apple Intelligence doesn't write {name}. Pick a language it lists."),
-        );
-    }
-}
-
-/// The built-ins' rows under the model: how each writes, and starts.
-fn page_rows(ui: &mut Ui, ai: &mut AiSettings, speaks: &dyn Fn(&str) -> Option<bool>) {
-    for task in PageTask::ALL {
-        page_row(ui, ai, task, speaks);
-    }
-}
-
-fn page_row(
-    ui: &mut Ui,
-    ai: &mut AiSettings,
-    task: PageTask,
-    speaks: &dyn Fn(&str) -> Option<bool>,
-) {
-    match task {
-        PageTask::Summarize => {
-            divider(ui);
-            row(ui, "Summary style", "Paragraphs, or a short list", |ui| {
-                let style = &mut ai.tasks.summarize.style;
-                let name = |s: SummaryStyle| match s {
-                    SummaryStyle::Paragraphs => "Paragraphs",
-                    SummaryStyle::Points => "Key points",
-                };
-                widgets::combo("ai-summary-style")
-                    .width(PICK_W)
-                    .selected_text(name(*style))
-                    .show_ui(ui, |ui| {
-                        for s in [SummaryStyle::Paragraphs, SummaryStyle::Points] {
-                            ui.selectable_value(style, s, name(s));
-                        }
-                    });
-            });
-        }
-        PageTask::Translate => {
-            divider(ui);
-            let tip = "The page menu offers others too";
-            row(ui, "Translate to", tip, |ui| {
-                let t = &mut ai.tasks.translate;
-                let mut chosen = t.language.clone();
-                let id = ("ai-translate-language", PICK_LATER);
-                language_picker(ui, id, &mut chosen, speaks);
-                match chosen {
-                    Some(tag) if t.language.as_deref() != Some(&tag) => t.pick(&tag),
-                    None => t.language = None,
-                    Some(_) => {}
-                }
-            });
-            divider(ui);
-            let tip = "What choosing Translate in the page menu does";
-            row(ui, "Translating", tip, |ui| {
-                start_picker(ui, "ai-translate-start", &mut ai.tasks.translate.start);
-            });
-        }
-        PageTask::Simplify => {
-            divider(ui);
-            let tip = "What choosing Simplify in the page menu does";
-            row(ui, "Simplifying", tip, |ui| {
-                start_picker(ui, "ai-simplify-start", &mut ai.tasks.simplify.start);
-            });
-        }
-    }
-}
-
-/// What choosing a page task does: ask, this page, or on as one reads.
-fn start_picker(ui: &mut Ui, salt: &str, start: &mut PageStart) {
-    let name = |s: PageStart| match s {
-        PageStart::Ask => "Ask each time",
-        PageStart::Page => "This page",
-        PageStart::Continuous => "Continuous",
-    };
-    widgets::combo(salt)
-        .width(PICK_W)
-        .selected_text(name(*start))
-        .show_ui(ui, |ui| {
-            for s in [PageStart::Ask, PageStart::Page, PageStart::Continuous] {
-                ui.selectable_value(start, s, name(s));
-            }
-        });
 }

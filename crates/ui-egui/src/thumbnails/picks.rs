@@ -450,10 +450,22 @@ fn ai_rows(ui: &mut Ui, (pane, offer): (PaneId, &Offer), picks: &Picks, out: &mu
         .current
         .as_deref()
         .and_then(mareader_settings::language_name);
-    if let Some(tag) = crate::language_menu::show(ui, &choices, |ui| {
+    let shown = crate::language_menu::show_beside_action(ui, &choices, None, |ui| {
         widgets::menu_row_chevron(ui, Icon::Translate, "Translate", current)
-    }) {
+    });
+    if let Some(tag) = shown.picked {
         out.push(run(PageTask::Translate, Some(tag)));
+        ui.close();
+    } else if shown.row.clicked()
+        && let Some(tag) = choices.current
+    {
+        out.push(Sent::Engine(Command::PageAi(
+            Action::TranslatePagesCurrent {
+                pane,
+                pages: picks.pages(),
+                tag,
+            },
+        )));
         ui.close();
     }
     let simplify = menu_row(ui, Icon::Simplify, "Simplify", None, false);

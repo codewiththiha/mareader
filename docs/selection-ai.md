@@ -18,8 +18,10 @@ and scrolls if needed; its size is not user-resizable.
   the list; the next closes the menu. The page menu folds them the same
   way (`skill_menu.rs`, over the shared `side_list.rs`, which the
   Dictionary picker's AI languages use too).
-- **Translation.** Hover or activate Translate to choose a target from the
-  same searchable side list as page translation. Recent choices come first,
+- **Translation.** Click Translate to use the current target, or hover it
+  to choose a target from the same searchable side list as page translation.
+  Until a manual pick, the target follows a downloaded dictionary default,
+  falling back to English when none is available. Recent choices come first,
   and the current choice is checked. The selected language is kept with the
   request and pinned answer, so retrying it keeps the original target. Apple
   model languages are filtered when its probe reports them; otherwise the

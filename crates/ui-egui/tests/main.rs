@@ -31,6 +31,7 @@ mod option_keys;
 mod organize;
 mod page_ai;
 mod page_groups;
+mod page_translate;
 mod pages;
 mod panel;
 mod pronunciation;

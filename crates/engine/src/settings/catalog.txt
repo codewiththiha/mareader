@@ -102,9 +102,6 @@ Ai|Library|Books per request|batch library metadata|
 Ai|Library|Organize library|metadata cover sorting model|
 Ai|Selections and pages|Selection AI|skill model|
 Ai|Selections and pages|Summary style|paragraph list|
-Ai|Selections and pages|Translate to|target language translation|
-Ai|Selections and pages|Translating|voice speech translation|
-Ai|Selections and pages|Simplifying|voice speech simplification|
 Ai|More than one page|Time on a page|pages batch|
 Ai|More than one page|Pages at once|parallel batch|
 Ai|More than one page|Pages per request|batch|

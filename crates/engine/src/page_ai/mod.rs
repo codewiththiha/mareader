@@ -48,6 +48,19 @@ pub enum Action {
         tag: String,
         how: How,
     },
+    /// Translates using the effective target without saving an override.
+    TranslateCurrent {
+        pane: PaneId,
+        page: usize,
+        tag: String,
+        how: How,
+    },
+    /// Translates picked pages without saving a new language override.
+    TranslatePagesCurrent {
+        pane: PaneId,
+        pages: Vec<usize>,
+        tag: String,
+    },
     /// Ends the pane's continuous run.
     StopFollow(PaneId),
     /// Asks pages picked in the thumbnails, in groups.

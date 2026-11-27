@@ -54,8 +54,6 @@ type What = (AiTask, PageSpan, Arc<Rewritten>, Option<Arc<Source>>, u64);
 enum Step {
     Tasks,
     Languages,
-    /// This page or continuous, for a task and maybe a language.
-    How(PageTask, Option<String>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -106,8 +104,6 @@ pub struct PageAiUi {
     washed_word: Option<mareader_speech::Spot>,
     /// Language search input in the open menu.
     filter: String,
-    /// The menu's "Remember my choice" toggle.
-    remember: bool,
     pub(crate) study: crate::study_mode::menu::Look,
 }
 
@@ -616,7 +612,6 @@ impl PageAiUi {
     ) {
         self.bubble_menu = None;
         self.filter.clear();
-        self.remember = false;
         self.washed = Some((pane, vec![page]));
         self.washed_word = aloud.and_then(|a| a.at);
         self.menu = Some(Menu {

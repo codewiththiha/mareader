@@ -12,17 +12,14 @@ no parity entry.
   text when nothing is selected. Those keep their own menus.
 - **No model yet.** The menu says what the tasks do and offers
   "Set up AI…", which opens Settings › AI.
-- **Translate.** Hover or activate "Translate page…" to open the same
-  searchable language list as selection translation. Typing opens search;
-  recent languages come first and the current one is checked. A pick is
-  remembered, with the last five. Apple model languages are filtered when
-  reported; otherwise the catalog is shown. A fallback model may support
-  different languages.
-- **This page or continuous.** Translate and Simplify follow their
-  setting: ask each time (the default), this page, or continuous. Asking
-  shows a second step with "This page", "Continuous" and "Remember my
-  choice", which saves the answer as the setting. A task set to
-  continuous says so beside its row.
+- **Translate.** Click "Translate page…" to run the current target, or
+  hover it to choose a language from the searchable list. Recent languages
+  come first. Until a language is picked, the target follows a downloaded
+  dictionary default; otherwise it falls back to English. A manual pick is
+  remembered, with the last five.
+- **This page or continuous.** Translate and Simplify run the current page
+  directly. Separate "Translate continuously" and "Simplify continuously"
+  actions carry on as the reader reads.
 - **Already running.** The same task on the same text just shows the run
   under way; it is not asked twice.
 
@@ -191,8 +188,6 @@ At the end of the AI tab, after the models:
 |---|---|
 | Summarize, Translate, Simplify models | Same as Explain words |
 | Summary style | Paragraphs (or key points) |
-| Translate to | Picked when first translating |
-| Translating, Simplifying | Ask each time |
 | Time on a page | 25 s |
 | Pages at once | 5 |
 
@@ -238,8 +233,8 @@ the AI Dictionary's until picked.
 - `crates/ui-egui/tests/page_ai.rs`, headless, through the real menus. Without
   a model the menu offers setting one up; with one, the three tasks. A
   picked language is remembered. Marks keep their own menu. A kept result
-  covers the page until the original is asked for. Asking how, and
-  remembering continuous. A task set to "this page" doesn't ask. The AI
+  covers the page until the original is asked for. Direct actions run one
+  page, and separate actions start continuous mode. The AI
   stack stops a run. Going far away pauses, then its line's Continue
   carries on there. A
   five-second stay asks exactly "pages at once" pages ahead. A book lays a

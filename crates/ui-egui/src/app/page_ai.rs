@@ -12,6 +12,9 @@ impl MareaderApp {
         let now = ctx.input(|i| i.time);
         let task = match &action {
             Action::Run { task, .. } => task_for(*task, &self.settings().ai),
+            Action::TranslateCurrent { tag, .. } => Some(mareader_library::AiTask::Translate {
+                language: tag.clone(),
+            }),
             Action::Translate { tag, .. } => {
                 let mut ai = self.settings().ai.clone();
                 ai.tasks.translate.pick(tag);
@@ -22,9 +25,17 @@ impl MareaderApp {
             }
             _ => None,
         };
-        if matches!(&action, Action::Run { .. } | Action::Translate { .. }) {
+        if matches!(
+            &action,
+            Action::Run { .. } | Action::Translate { .. } | Action::TranslateCurrent { .. }
+        ) {
             self.page_ai_run(action, task, now);
-        } else if matches!(&action, Action::RunPages { .. } | Action::PagesMenu { .. }) {
+        } else if matches!(
+            &action,
+            Action::RunPages { .. }
+                | Action::TranslatePagesCurrent { .. }
+                | Action::PagesMenu { .. }
+        ) {
             self.page_ai_pages(action);
         } else {
             self.page_ai_result(action, now);
@@ -37,6 +48,9 @@ impl MareaderApp {
                 pane, page, how, ..
             }
             | Action::Translate {
+                pane, page, how, ..
+            }
+            | Action::TranslateCurrent {
                 pane, page, how, ..
             } => {
                 let Some(task) = task else { return };
@@ -88,6 +102,12 @@ impl MareaderApp {
                 };
                 let Some(task) = task else { return };
                 let page = pages.first().copied().unwrap_or_default();
+                self.session
+                    .page_ai_run_pages(pane, page, &self.ui.ai, &pages, task);
+            }
+            Action::TranslatePagesCurrent { pane, pages, tag } => {
+                let page = pages.first().copied().unwrap_or_default();
+                let task = mareader_library::AiTask::Translate { language: tag };
                 self.session
                     .page_ai_run_pages(pane, page, &self.ui.ai, &pages, task);
             }
