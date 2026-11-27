@@ -19,6 +19,10 @@ impl MareaderApp {
             look: &self.session.settings().study.highlights,
         };
         let asked = self.ui.space.show(ui, from, top, out);
+        if let Some(word) = self.ui.space.take_lookup() {
+            let ticket = self.session.dict_look_up(&word);
+            self.ui.space.set_lookup_ticket(ticket);
+        }
         if let Some(Ask::Export(csv)) = asked {
             let name = (crate::space::EXPORT, CSV_NAME.to_owned());
             let bytes = csv.into_bytes();

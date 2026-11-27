@@ -217,6 +217,7 @@ impl MareaderApp {
     /// Lookup replies in; when what dictionaries answer changed, the card
     /// asks again.
     fn dict_replies(&mut self, changed: bool, replies: Vec<mareader_dict::Reply>) {
+        self.ui.space.receive(&replies);
         let exact = !self.settings().dictionary.near;
         self.ui.dict.set_exact_only(exact);
         self.ui.dict.receive(changed, replies);

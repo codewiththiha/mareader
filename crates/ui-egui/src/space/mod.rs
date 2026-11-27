@@ -6,6 +6,7 @@
 //! left side, its header and its rows. What a row asks goes back as a
 //! command.
 
+mod detail;
 mod hub;
 mod look;
 mod notes;
@@ -49,6 +50,8 @@ pub struct SpaceUi {
     pub cards: bool,
     /// The row opened to its sentence, by its key.
     open: Option<u128>,
+    detail: Option<detail::Detail>,
+    lookup: Option<String>,
 }
 
 /// What the page asks of the window this frame.
@@ -77,7 +80,7 @@ impl SpaceUi {
         let full = ui.max_rect();
         ui.painter().rect_filled(full, 0.0, t.paper);
         let page = Rect::from_min_max(pos2(full.left(), top), full.max);
-        match from.room {
+        let asked = match from.room {
             Room::Hub => {
                 let col = column(page, page, HUB_W);
                 let scroll = egui::ScrollArea::vertical().id_salt("space-hub");
@@ -91,6 +94,39 @@ impl SpaceUi {
                 self.notes(ui, &from, page, &t, out);
                 None
             }
+        };
+        if from.room != Room::Words {
+            self.detail = None;
+            self.lookup = None;
+        }
+        if let Some(detail) = &mut self.detail {
+            if !detail.show(ui.ctx(), &t) {
+                self.detail = None;
+            }
+        }
+        asked
+    }
+
+    pub fn escape(&mut self, ctx: &egui::Context) -> bool {
+        if let Some(detail) = &mut self.detail {
+            detail.close(ctx);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn take_lookup(&mut self) -> Option<String> {
+        self.lookup.take()
+    }
+
+    pub fn set_lookup_ticket(&mut self, ticket: mareader_dict::Ticket) {
+        if let Some(detail) = &mut self.detail { detail.ticket(ticket); }
+    }
+
+    pub fn receive(&mut self, replies: &[mareader_dict::Reply]) {
+        if let Some(detail) = &mut self.detail {
+            for reply in replies { detail.receive(reply); }
         }
     }
 
@@ -175,6 +211,7 @@ impl SpaceUi {
         let scroll = egui::ScrollArea::vertical()
             .id_salt("space-page")
             .auto_shrink([false, false]);
+        let mut picked = None;
         let scrolled = scroll.show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 14.0;
             if look::back(ui, t) {
@@ -190,12 +227,20 @@ impl SpaceUi {
             let shown = rows::Shown {
                 cards: self.cards,
                 open: &mut self.open,
+                picked: &mut picked,
             };
             rows::show(ui, view, shown, t, out);
             ui.add_space(MARGIN);
             export
         });
         crate::widgets::scroll_fades(ui, &scrolled, t.paper);
+        if let Some((row, rect)) = picked {
+            let now = ui.ctx().input(|i| i.time);
+            let detail = detail::Detail::new(row, rect, now);
+            self.lookup = Some(detail.word().to_owned());
+            self.detail = Some(detail);
+            ui.ctx().request_repaint();
+        }
         scrolled.inner.then(|| Ask::Export(space::csv(view)))
     }
 }

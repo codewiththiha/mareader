@@ -153,3 +153,32 @@ fn a_library_cards_counts_open_space_on_that_book() -> Out {
     assert_eq!(h.state().session().room(), Room::Notes);
     Ok(())
 }
+
+#[test]
+fn word_details_open_from_list_and_escape_returns_to_words() {
+    let mut h = words();
+    h.get_by_label("Details for arcane").click();
+    h.run_steps(30);
+    assert!(h.query_by_label("Close word details").is_some());
+    h.key_press(egui::Key::Escape);
+    h.run_steps(30);
+    assert!(h.query_by_label("Close word details").is_none());
+    assert_eq!(h.state().session().room(), Room::Words);
+    assert_eq!(h.state().route(), Route::Space);
+}
+
+#[test]
+fn word_details_open_from_cards_without_breaking_row_actions() {
+    let mut h = words();
+    h.get_by_label("Cards").click();
+    h.run();
+    h.get_by_label("Details for arcane").click();
+    h.run_steps(30);
+    assert!(h.query_by_label("Close word details").is_some());
+    h.get_by_label("Close word details").click();
+    h.run_steps(30);
+    assert_eq!(status(&h, "ponder"), Some(WordStatus::Missed));
+    press(&mut h, "Memorize ponder");
+    h.run();
+    assert_eq!(status(&h, "ponder"), Some(WordStatus::Memorized));
+}

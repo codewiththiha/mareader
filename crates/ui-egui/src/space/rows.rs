@@ -26,6 +26,7 @@ const NONE_MATCH: &str = "Clear a filter, or study some pages to add more.";
 pub(super) struct Shown<'a> {
     pub cards: bool,
     pub open: &'a mut Option<u128>,
+    pub picked: &'a mut Option<(Row, egui::Rect)>,
 }
 
 /// Every section, under its heading; an empty page says why.
@@ -38,13 +39,13 @@ pub(super) fn show(ui: &mut Ui, view: &View, shown: Shown<'_>, t: &Tokens, out: 
         widgets::panel_empty(ui, Some(Icon::Levels), title, hint);
         return;
     }
-    let Shown { cards, open } = shown;
+    let Shown { cards, open, picked } = shown;
     ui.spacing_mut().item_spacing.y = 10.0;
     for section in &view.sections {
         heading(ui, section, t);
         match cards {
-            true => grid(ui, &section.rows, t, out),
-            false => sheet(ui, &section.rows, open, t, out),
+            true => grid(ui, &section.rows, picked, t, out),
+            false => sheet(ui, &section.rows, open, picked, t, out),
         }
         ui.add_space(8.0);
     }
@@ -65,7 +66,7 @@ fn heading(ui: &mut Ui, section: &Section, t: &Tokens) {
 }
 
 /// The rows on one raised sheet, a hairline between each.
-fn sheet(ui: &mut Ui, rows: &[Row], open: &mut Option<u128>, t: &Tokens, out: &mut Commands) {
+fn sheet(ui: &mut Ui, rows: &[Row], open: &mut Option<u128>, picked: &mut Option<(Row, egui::Rect)>, t: &Tokens, out: &mut Commands) {
     let edge = Stroke::new(1.0, t.line);
     let frame = Frame::new()
         .fill(t.card)
@@ -80,15 +81,17 @@ fn sheet(ui: &mut Ui, rows: &[Row], open: &mut Option<u128>, t: &Tokens, out: &m
                 let (rule, _) = ui.allocate_exact_size(size, Sense::hover());
                 ui.painter().hline(rule.x_range(), rule.center().y, edge);
             }
-            ui.push_id(row.key, |ui| line(ui, row, open, t, out));
+            ui.push_id(row.key, |ui| line(ui, row, open, picked, t, out));
         }
     });
 }
 
 /// One row: the word, its meaning, its date and badges; then its actions.
-fn line(ui: &mut Ui, row: &Row, open: &mut Option<u128>, t: &Tokens, out: &mut Commands) {
+fn line(ui: &mut Ui, row: &Row, open: &mut Option<u128>, picked: &mut Option<(Row, egui::Rect)>, t: &Tokens, out: &mut Commands) {
     let is_open = *open == Some(row.key);
-    Frame::new()
+    let hit = row_hit(ui, row, vec2(ui.available_width(), 84.0));
+    let frame = Frame::new()
+        .fill(if hit.hovered() { t.hover } else { egui::Color32::TRANSPARENT })
         .inner_margin(Margin::symmetric(18, 12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -128,27 +131,29 @@ fn line(ui: &mut Ui, row: &Row, open: &mut Option<u128>, t: &Tokens, out: &mut C
                 });
             }
         });
+    pick(ui, row, frame.response.rect, hit, picked);
 }
 
 /// The words as cards, as many to a line as the page has room for.
 ///
 /// A framed card is a child area, which a wrapping layout cannot move down.
-fn grid(ui: &mut Ui, rows: &[Row], t: &Tokens, out: &mut Commands) {
+fn grid(ui: &mut Ui, rows: &[Row], picked: &mut Option<(Row, egui::Rect)>, t: &Tokens, out: &mut Commands) {
     let across = (ui.available_width() + GAP) / (CARD_W + CARD_EDGES + GAP);
     let across = (across.floor() as usize).max(1);
     for line in rows.chunks(across) {
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = GAP;
             for row in line {
-                ui.push_id(row.key, |ui| card(ui, row, t, out));
+                ui.push_id(row.key, |ui| card(ui, row, picked, t, out));
             }
         });
     }
 }
 
-fn card(ui: &mut Ui, row: &Row, t: &Tokens, out: &mut Commands) {
-    Frame::new()
-        .fill(t.card)
+fn card(ui: &mut Ui, row: &Row, picked: &mut Option<(Row, egui::Rect)>, t: &Tokens, out: &mut Commands) {
+    let hit = row_hit(ui, row, vec2(CARD_W + CARD_EDGES, 180.0));
+    let frame = Frame::new()
+        .fill(if hit.hovered() { t.hover } else { t.card })
         .stroke(Stroke::new(1.0, t.line))
         .corner_radius(look::ROUND)
         .inner_margin(Margin::same(16))
@@ -175,6 +180,29 @@ fn card(ui: &mut Ui, row: &Row, t: &Tokens, out: &mut Commands) {
                 ui.horizontal(|ui| memorize(ui, row, out, t));
             });
         });
+    pick(ui, row, frame.response.rect, hit, picked);
+}
+
+fn row_hit(ui: &mut Ui, row: &Row, size: egui::Vec2) -> egui::Response {
+    let id = ui.make_persistent_id("detail-hit");
+    let rect = ui.ctx().data(|d| d.get_temp::<egui::Rect>(id))
+        .unwrap_or_else(|| egui::Rect::from_min_size(ui.cursor().min, size));
+    let hit = ui.interact(rect.intersect(ui.clip_rect()), id.with("button"), Sense::click());
+    hit.widget_info(|| egui::WidgetInfo::labeled(
+        egui::WidgetType::Button, true, format!("Details for {}", row.lemma)
+    ));
+    if hit.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    hit
+}
+
+fn pick(ui: &Ui, row: &Row, rect: egui::Rect, hit: egui::Response, picked: &mut Option<(Row, egui::Rect)>) {
+    let id = ui.make_persistent_id("detail-hit");
+    ui.ctx().data_mut(|d| d.insert_temp(id, rect));
+    if hit.clicked() {
+        *picked = Some((row.clone(), rect.intersect(ui.clip_rect())));
+    }
 }
 
 /// The lemma, its class in italics, and its level.

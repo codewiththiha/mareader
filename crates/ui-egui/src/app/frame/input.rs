@@ -153,7 +153,9 @@ impl MareaderApp {
             free = false;
         }
         if free && route == Route::Space {
-            commands.push(self.escape_space());
+            if !self.ui.space.escape(ctx) {
+                commands.push(self.escape_space());
+            }
             free = false;
         }
         // The dictionary clears its search, else goes back.
