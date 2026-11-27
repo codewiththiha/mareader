@@ -204,7 +204,7 @@ fn recall_scrolls_independently_of_the_word_and_header() {
         .expect("first attempt")
         .rect();
     let close = h.get_by_label("Close word details").rect();
-    let meaning = h.get_by_label("very thin, as from hunger or age").rect();
+    let meaning = h.get_by_label("haggard").rect();
     h.hover_at(first.center());
     h.event(egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,
@@ -224,9 +224,33 @@ fn recall_scrolls_independently_of_the_word_and_header() {
     );
     assert_eq!(h.get_by_label("Close word details").rect(), close);
     assert_eq!(
-        h.get_by_label("very thin, as from hunger or age").rect(),
+        h.get_by_label("haggard").rect(),
         meaning
     );
+}
+
+#[test]
+fn long_book_title_line_scrolls_without_moving_close() {
+    let mut h = words();
+    h.get_by_label("Merged").click();
+    h.run();
+    h.get_by_label("Details for gaunt").click();
+    h.run_steps(30);
+    h.set_size(egui::vec2(360.0, 680.0));
+    h.run_steps(15);
+    let title = "Middlemarch, A Field Guide to Ferns";
+    let before = h.get_by_label(title).rect();
+    let close = h.get_by_label("Close word details").rect();
+    h.hover_at(egui::pos2(180.0, close.center().y));
+    h.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(-220.0, 0.0),
+        phase: egui::TouchPhase::Move,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.run_steps(30);
+    assert!(h.get_by_label(title).rect().left() < before.left() - 10.0);
+    assert_eq!(h.get_by_label("Close word details").rect(), close);
 }
 
 #[test]

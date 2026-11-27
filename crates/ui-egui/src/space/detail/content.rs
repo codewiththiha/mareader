@@ -130,7 +130,7 @@ fn core(ui: &mut Ui, detail: &Detail, t: &Tokens) {
                 ui.set_width(ui.available_width());
                 look::caption(ui, "In context", t);
                 ui.add_space(3.0);
-                egui::ScrollArea::vertical()
+                let scrolled = egui::ScrollArea::vertical()
                     .id_salt(("word-detail-context", detail.row.key))
                     .max_height(128.0)
                     .show(ui, |ui| {
@@ -143,6 +143,10 @@ fn core(ui: &mut Ui, detail: &Detail, t: &Tokens) {
                             .wrap(),
                         );
                     });
+                widgets::scroll_fades(ui, &scrolled, t.paper);
+                if scrolled.content_size.y > scrolled.inner_rect.height() + 1.0 {
+                    look::quiet(ui, "Scroll to read more", t.text_small, t);
+                }
             });
     }
 }
@@ -256,7 +260,7 @@ fn recall(ui: &mut Ui, detail: &Detail, t: &Tokens) {
         );
         return;
     }
-    egui::ScrollArea::vertical()
+    let scrolled = egui::ScrollArea::vertical()
         .id_salt(("word-detail-recall", detail.row.key))
         .max_height(245.0)
         .show(ui, |ui| {
@@ -271,6 +275,10 @@ fn recall(ui: &mut Ui, detail: &Detail, t: &Tokens) {
                 ui.add_space(4.0);
             }
         });
+    widgets::scroll_fades(ui, &scrolled, t.card);
+    if scrolled.content_size.y > scrolled.inner_rect.height() + 1.0 {
+        look::quiet(ui, "Scroll for more attempts", t.text_small, t);
+    }
 }
 
 pub(super) fn session_title(detail: &Detail, run: &History) -> String {
