@@ -479,3 +479,6 @@ fn translation_submenu_escape_folds_before_the_page_menu_closes() -> Out {
     assert!(h.query_by_label("Translate page…").is_none());
     Ok(())
 }
+
+#[path = "page_ai_keyboard.rs"]
+mod keyboard;
