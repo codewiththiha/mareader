@@ -325,9 +325,9 @@ impl Accent {
 #[serde(rename_all = "snake_case")]
 pub enum Notation {
     /// As dictionaries write it: `/jɒt/`.
-    #[default]
     Ipa,
     /// Spelled as it sounds, stress in bold: `yot`.
+    #[default]
     Easy,
     /// The phonemes the voices read, stress on each vowel.
     Raw,
@@ -371,7 +371,7 @@ impl Default for PronunciationSettings {
             shown: true,
             follow_voice: true,
             accent: Accent::Both,
-            notation: Notation::Ipa,
+            notation: Notation::Easy,
         }
     }
 }

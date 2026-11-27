@@ -20,7 +20,7 @@ use mareader_engine::command::Command;
 #[cfg(not(target_arch = "wasm32"))]
 mod ai;
 mod dictionary;
-pub use dictionary::{ALL_LANGUAGES, ELSEWHERE, MORE_LANGUAGES};
+pub use dictionary::{ALL_LANGUAGES, DOWNLOADED_LANGUAGES, ELSEWHERE, MORE_LANGUAGES};
 mod downloads;
 mod fonts;
 mod highlights;

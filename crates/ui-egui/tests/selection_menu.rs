@@ -378,6 +378,9 @@ fn answer_header_controls_share_size_and_alignment() {
     assert_eq!(pin.size(), close.size());
     assert!((remove.center().y - pin.center().y).abs() < 1.0);
     assert!((close.center().y - pin.center().y).abs() < 1.0);
+    let title = h.get_by_label("Simplify").rect();
+    assert!((title.center().y - pin.center().y).abs() < 1.0);
+    assert!(title.right() <= remove.left());
 }
 
 #[test]

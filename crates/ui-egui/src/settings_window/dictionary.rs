@@ -22,19 +22,67 @@ pub const ELSEWHERE: &str = "AI writes Explain's meanings in AI › Meaning in, 
                              decks in Study mode › Cards in.";
 /// The fold of packs not on this device, beside some that are.
 pub const MORE_LANGUAGES: &str = "More languages";
+/// The fold for packs already on this device.
+pub const DOWNLOADED_LANGUAGES: &str = "Downloaded languages";
 /// The same fold while no pack is on this device.
 pub const ALL_LANGUAGES: &str = "Available languages";
 
 pub fn tab(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService, out: &mut Commands) {
     section(ui, "Language packs");
+    packs(ui, dict, out);
+    if dict.attached() {
+        note(
+            ui,
+            "Packs work offline once downloaded. A paused download resumes where it stopped.",
+        );
+    } else {
+        note(ui, "Downloads need the desktop app.");
+    }
+    ai_dictionary(ui, dict, out);
+    section(ui, "In the reader");
+    group(ui, |ui| {
+        for (i, (choice, title, detail)) in OPENS.into_iter().enumerate() {
+            if i > 0 {
+                divider(ui);
+            }
+            if choice_row(ui, title, detail, s.opens == choice) {
+                s.opens = choice;
+            }
+        }
+    });
+    note(ui, "The Dictionary button and Cmd/Ctrl+Shift+D open it so.");
+    lookup_card(ui, s, dict);
+    saying(ui, s);
+}
+
+fn packs(ui: &mut Ui, dict: &DictService, out: &mut Commands) {
     let mut packs: Vec<&'static Pack> = PACKS.iter().collect();
     packs.sort_by_key(|p| language(p.target));
     // Downloading counts as here, so its progress never hides in the fold.
-    let (here, more): (Vec<_>, Vec<_>) =
+    let (here, more): (Vec<&'static Pack>, Vec<&'static Pack>) =
         (packs.into_iter()).partition(|p| dict.attached() && *dict.state(p) != State::Absent);
+    let (ready, active): (Vec<&'static Pack>, Vec<&'static Pack>) = here
+        .iter()
+        .copied()
+        .partition(|pack| matches!(dict.state(pack), State::Ready));
     group(ui, |ui| {
-        for (i, &pack) in here.iter().enumerate() {
-            if i > 0 {
+        if !ready.is_empty() {
+            let id = egui::Id::new("dict-downloaded-languages");
+            if ui.data(|d| d.get_temp::<bool>(id)).is_none() {
+                ui.data_mut(|d| d.insert_temp(id, true));
+            }
+            let detail = format!("{} downloaded", ready.len());
+            if fold_row(ui, id, (DOWNLOADED_LANGUAGES, &detail)) {
+                folded(ui, |ui| {
+                    for &pack in &ready {
+                        divider(ui);
+                        pack_row(ui, pack, dict, out);
+                    }
+                });
+            }
+        }
+        for (i, &pack) in active.iter().enumerate() {
+            if i > 0 || !ready.is_empty() {
                 divider(ui);
             }
             pack_row(ui, pack, dict, out);
@@ -71,29 +119,6 @@ pub fn tab(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService, out: &mu
             }
         });
     });
-    if dict.attached() {
-        note(
-            ui,
-            "Packs work offline once downloaded. A paused download resumes where it stopped.",
-        );
-    } else {
-        note(ui, "Downloads need the desktop app.");
-    }
-    ai_dictionary(ui, dict, out);
-    section(ui, "In the reader");
-    group(ui, |ui| {
-        for (i, (choice, title, detail)) in OPENS.into_iter().enumerate() {
-            if i > 0 {
-                divider(ui);
-            }
-            if choice_row(ui, title, detail, s.opens == choice) {
-                s.opens = choice;
-            }
-        }
-    });
-    note(ui, "The Dictionary button and Cmd/Ctrl+Shift+D open it so.");
-    lookup_card(ui, s, dict);
-    saying(ui, s);
 }
 
 /// The AI dictionary's languages, each cleared on a second press.
