@@ -54,6 +54,7 @@ fn main() -> Result<(), String> {
     let mut ai_key = None;
     let mut scripted = false;
     let mut clicks = Vec::new();
+    let mut seed_space_after_open = false;
     let mut thumb_menu = None;
     let mut table_question = false;
     let mut finish = edit::Finish::default();
@@ -249,6 +250,7 @@ fn main() -> Result<(), String> {
             }
             // Pressed by its name, `_` for a space: `click=All_voices`.
             "click" => clicks.push(v.replace('_', " ")),
+            "seed_space_after_open" => seed_space_after_open = v == "true",
             "thumb_menu" => {
                 let range = match v.split_once('-') {
                     Some((a, b)) => (
@@ -359,6 +361,12 @@ fn main() -> Result<(), String> {
     }
     if wait_for_opening {
         wait_for_ready(&mut harness, true, false, 45);
+    }
+    if seed_space_after_open {
+        harness.state_mut().queue(Sent::Engine(Command::Library(mareader_engine::library::Action::SeedWords)));
+        harness.run_steps(4);
+        harness.state_mut().queue(Sent::Engine(Command::ShowSpace(mareader_engine::space::Room::Words)));
+        harness.run_steps(8);
     }
     let mut library_shown = false;
     for c in queued {

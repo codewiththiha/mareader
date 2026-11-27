@@ -277,3 +277,21 @@ fn erasing_a_book_tombstones_recall_text_on_sync() {
     combined.merge(after);
     assert!(combined.recall_history.sessions.is_empty());
 }
+
+#[test]
+fn removing_one_occurrence_tombstones_its_answers_on_sync() {
+    let mut lib = Library::new(A);
+    let one = book(&mut lib, "/a.epub", 1);
+    let new = NewWord {
+        answers: vec![crate::RecallAnswer { text: "private answer".into(), ..Default::default() }],
+        ..word("lintel", WordStatus::Learning)
+    };
+    let id = lib.record_word(one, new, 2_000).unwrap();
+    let mut old = lib.sightings(one).first().unwrap().clone().clone();
+    assert!(lib.remove_word_from_book(one, id, 3_000));
+    let removed = lib.sightings.values().find(|s| s.word == id).unwrap().clone();
+    old.merge(removed);
+    assert!(!old.alive.value);
+    assert!(old.recall_history.sessions.is_empty());
+    assert!(old.context.value.is_empty());
+}

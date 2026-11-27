@@ -96,7 +96,7 @@ impl Finish {
             {
                 let node = harness
                     .query_all_by_label(label)
-                    .next()
+                    .last()
                     .ok_or(format!("nothing named {label}"))?;
                 node.click();
             }
