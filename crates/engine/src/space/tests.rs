@@ -193,10 +193,7 @@ fn groups_follow_the_first_row_and_levels_go_hardest_first() {
         sort: Sort::Recent,
         ..az(Scope::Books)
     };
-    assert_eq!(
-        labels(&view(&lib, &days)),
-        ["Nov 16, 2026", "Oct 17, 2026"]
-    );
+    assert_eq!(labels(&view(&lib, &days)), ["Nov 16, 2026", "Oct 17, 2026"]);
     let month = Filter {
         group: Group::Month,
         sort: Sort::Recent,
