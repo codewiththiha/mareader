@@ -59,6 +59,12 @@ pub fn view(lib: &Library, filter: &Filter) -> View {
     }
 }
 
+/// `ms`'s day in UTC, including its year.
+pub fn date(ms: u64) -> String {
+    let (year, _, _) = civil(ms / DAY_MS);
+    format!("{}, {year}", day(ms))
+}
+
 /// `ms`'s day in UTC, as Nov 21.
 pub fn day(ms: u64) -> String {
     let (_, m, d) = civil(ms / DAY_MS);
@@ -284,10 +290,7 @@ fn heading(group: Group, row: &Row) -> String {
         Group::None => String::new(),
         Group::Book => row.books.first().cloned().unwrap_or_default(),
         Group::Level => mareader_cefr::label(row.band).to_owned(),
-        Group::Day => {
-            let (year, _, _) = civil(row.seen / DAY_MS);
-            format!("{}, {year}", day(row.seen))
-        }
+        Group::Day => date(row.seen),
         Group::Month => month(row.seen),
         Group::Status => super::status_label(row.status).to_owned(),
     }

@@ -17,7 +17,7 @@ use mareader_library::{BookId, Format, LearnedBy, MeaningBy, RecallAnswer, WordI
 
 pub use csv::{CSV_NAME, csv};
 pub use notes::{Kept, NoteGroup, NoteRow, NotesFilter, NotesView, notes};
-pub use query::{day, view};
+pub use query::{date, day, view};
 pub use room::Room;
 pub(crate) use seed::seed;
 pub(crate) use seed_marks::seed_marks;

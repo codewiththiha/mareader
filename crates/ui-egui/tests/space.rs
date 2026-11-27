@@ -169,9 +169,12 @@ fn word_details_open_from_list_and_escape_returns_to_words() {
 
 #[test]
 fn word_details_open_from_cards_without_breaking_row_actions() {
-    let mut h = words();
-    h.get_by_label("Cards").click();
-    h.run();
+    let mut h = reader(&[
+        ("books", "3"),
+        ("words", "demo"),
+        ("space", "words"),
+        ("space_view", "cards"),
+    ]);
     h.get_by_label("Details for arcane").click();
     h.run_steps(30);
     assert!(h.query_by_label("Close word details").is_some());

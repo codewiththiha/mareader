@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
-use mareader_library::{BookId, LearnedBy, Library, MeaningBy, NewWord, WordStatus};
+use mareader_library::{BookId, LearnedBy, Library, MeaningBy, NewWord, WordId, WordStatus};
 use mareader_session::TextLayer;
 use mareader_study::mode::{Done, Judge, Key, Mode, Outcome, Pos};
 use mareader_workspace::PaneId;
@@ -139,7 +139,21 @@ impl Session {
         };
         match recalling.ending(Outcome::Missed) {
             Some(done) => self.study_recall_save(pane, done),
-            None => drop(self.study_mode.take_recall()),
+            None => {
+                let book = self.study_mode.run(pane).and_then(|run| run.book);
+                if let (Some(book), Some(recalling)) = (book, self.study_mode.take_recall())
+                    && !recalling.answers.is_empty()
+                {
+                    let first = recalling.recall.attempts == 1
+                        && recalling.recall.verdict == Some(mareader_study::mode::Verdict::Correct);
+                    let done = Done {
+                        outcome: Outcome::Learning,
+                        attempts: recalling.recall.attempts,
+                        first_try: first,
+                    };
+                    keep(&mut self.library.model, book, &recalling, done, true);
+                }
+            }
         }
         true
     }
@@ -157,7 +171,7 @@ impl Session {
             r.book
         });
         if let Some(book) = book {
-            keep(&mut self.library.model, book, &recalling, done);
+            keep(&mut self.library.model, book, &recalling, done, false);
         }
         if done.outcome == Outcome::Memorized {
             let said = format!("“{}” added to memorized.", recalling.word.key.lemma);
@@ -210,17 +224,24 @@ fn hear(recalling: &mut Recalling, vocab: &mut Vocab, dict: &mut crate::dict::Se
 }
 
 /// Keeps a recalled word and where `book` showed it, with its tries.
-fn keep(model: &mut Library, book: BookId, recalling: &Recalling, done: Done) {
+fn keep(model: &mut Library, book: BookId, recalling: &Recalling, done: Done, preserve: bool) {
     let word = &recalling.word;
     let status = match done.outcome {
         Outcome::Learning => WordStatus::Learning,
         Outcome::Memorized => WordStatus::Memorized,
         Outcome::Missed => WordStatus::Missed,
     };
+    let class = recalling.class().map(|p| p.name().to_owned());
+    let id = WordId::of(&word.key.lemma, class.as_deref());
+    let status = if preserve {
+        model.word(id).map_or(status, |existing| existing.status.value)
+    } else {
+        status
+    };
     let meaning = recalling.back.as_ref().map(|b| b.meaning.clone());
     let new = NewWord {
         lemma: word.key.lemma.clone(),
-        pos: recalling.class().map(|p| p.name().to_owned()),
+        pos: class,
         band: word.band,
         form: word.form.clone(),
         context: word.sentence.clone(),

@@ -274,7 +274,7 @@ impl Detail {
             );
         }
         for run in &self.row.history {
-            let title = format!("{} · {}", run.book, space::day(run.when));
+            let title = format!("{} · {}", run.book, space::date(run.when));
             ui.label(RichText::new(title).color(t.muted));
             for (i, answer) in run.answers.iter().enumerate() {
                 let title = format!("{}. {}  ·  {}", i + 1, answer.text, answer.verdict);
