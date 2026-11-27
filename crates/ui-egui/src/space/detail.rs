@@ -198,7 +198,9 @@ impl Detail {
         });
         let method = match self.row.by {
             mareader_library::LearnedBy::Proactive => "Card".to_owned(),
-            mareader_library::LearnedBy::Reactive if self.row.tries == 1 => "Recall · 1 try".to_owned(),
+            mareader_library::LearnedBy::Reactive if self.row.tries == 1 => {
+                "Recall · 1 try".to_owned()
+            }
             mareader_library::LearnedBy::Reactive => format!("Recall · {} tries", self.row.tries),
         };
         let metadata = format!("{method}  ·  Last met {}", space::date(self.row.seen));
@@ -342,10 +344,16 @@ mod tests {
         let mut detail = Detail::new(row(), Vec::new(), source, 0.0);
         detail.ticket(Ticket(7));
         assert!((detail.progress(&ctx, DURATION / 2.0) - 0.5).abs() < 0.001);
-        detail.receive(&Reply { ticket: Ticket(6), ..Reply::default() });
+        detail.receive(&Reply {
+            ticket: Ticket(6),
+            ..Reply::default()
+        });
         assert!(detail.entries.is_none());
         assert_eq!(detail.progress(&ctx, DURATION), 1.0);
-        detail.receive(&Reply { ticket: Ticket(7), ..Reply::default() });
+        detail.receive(&Reply {
+            ticket: Ticket(7),
+            ..Reply::default()
+        });
         assert!(detail.entries.is_some());
         detail.closing = true;
         detail.started = DURATION;
