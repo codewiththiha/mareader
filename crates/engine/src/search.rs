@@ -15,6 +15,7 @@ const KEEP: usize = 3;
 pub struct Found {
     /// The query these hits answer.
     pub query: String,
+    pub case_sensitive: bool,
     /// In page order; shared with the pages that paint them.
     pub hits: Arc<Vec<Hit>>,
     /// More hits than `MAX_HITS` turned up; the rest aren't kept.
@@ -52,6 +53,7 @@ struct Job {
     /// The `Document` it was built from: a re-typeset book is another.
     key: usize,
     asked: String,
+    case_sensitive: bool,
     asks: u64,
     found: Found,
     work: Work,
@@ -79,6 +81,10 @@ impl Search {
 
     /// Asks `document` for `query`; the index starts on the first ask.
     pub fn ask(&mut self, wake: Waker, doc: DocId, document: &Arc<Document>, query: &str) {
+        self.ask_case(wake, doc, document, query, false);
+    }
+
+    pub fn ask_case(&mut self, wake: Waker, doc: DocId, document: &Arc<Document>, query: &str, case_sensitive: bool) {
         let key = Arc::as_ptr(document).addr();
         let at = self.jobs.iter().position(|j| j.doc == doc && j.key == key);
         let mut job = match at {
@@ -87,6 +93,7 @@ impl Search {
                 doc,
                 key,
                 asked: String::new(),
+                case_sensitive: false,
                 asks: 0,
                 found: Found {
                     pages: document.page_count(),
@@ -95,10 +102,11 @@ impl Search {
                 work: Work::start(wake, document, self.inline),
             },
         };
-        if job.asked != query || job.asks == 0 {
+        if job.asked != query || job.case_sensitive != case_sensitive || job.asks == 0 {
             job.asked = query.to_owned();
+            job.case_sensitive = case_sensitive;
             job.asks += 1;
-            job.work.ask(job.asks, query, &mut job.found);
+            job.work.ask(job.asks, query, case_sensitive, &mut job.found);
         }
         self.jobs.push(job);
         if self.jobs.len() > KEEP {
@@ -139,14 +147,14 @@ impl Search {
 /// What the search thread is told: the latest query, numbered.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug)]
-struct Ask(u64, String);
+struct Ask(u64, String, bool);
 
 /// What it tells back.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug)]
 enum Told {
     /// The query's hits over the pages read so far, replacing any.
-    Answer(u64, String, Vec<Hit>, bool),
+    Answer(u64, String, bool, Vec<Hit>, bool),
     /// Hits on pages read since, for the latest query.
     More(u64, Vec<Hit>, bool),
     Indexed(usize),
@@ -175,8 +183,8 @@ impl Index {
     }
 
     /// A new query over every page read; true if hits were cut.
-    fn answer(&mut self, query: &str) -> (Vec<Hit>, bool) {
-        self.needle = Needle::new(query);
+    fn answer(&mut self, query: &str, case_sensitive: bool) -> (Vec<Hit>, bool) {
+        self.needle = Needle::with_case(query, case_sensitive);
         self.kept = 0;
         let mut out = Vec::new();
         let mut more = false;
@@ -239,16 +247,17 @@ impl Work {
         Self::Here(Box::new(index))
     }
 
-    fn ask(&mut self, asks: u64, query: &str, found: &mut Found) {
+    fn ask(&mut self, asks: u64, query: &str, case_sensitive: bool, found: &mut Found) {
         match self {
             // Here every page is read at once: tests and the browser.
             Self::Here(index) => {
                 while !index.done() {
                     index.read_next();
                 }
-                let (hits, more) = index.answer(query);
+                let (hits, more) = index.answer(query, case_sensitive);
                 *found = Found {
                     query: query.to_owned(),
+                    case_sensitive,
                     hits: Arc::new(hits),
                     more,
                     indexed: index.pages.len(),
@@ -257,7 +266,7 @@ impl Work {
             }
             #[cfg(not(target_arch = "wasm32"))]
             Self::Thread { ask, .. } => {
-                let _ = ask.send(Ask(asks, query.to_owned()));
+                let _ = ask.send(Ask(asks, query.to_owned(), case_sensitive));
             }
         }
         let _ = asks;
@@ -271,8 +280,9 @@ impl Work {
             while let Ok(t) = told.try_recv() {
                 changed = true;
                 match t {
-                    Told::Answer(n, query, hits, more) if n == asks => {
+                    Told::Answer(n, query, case_sensitive, hits, more) if n == asks => {
                         found.query = query;
+                        found.case_sensitive = case_sensitive;
                         found.hits = Arc::new(hits);
                         found.more = more;
                     }
@@ -323,10 +333,10 @@ fn work(
             while let Ok(newer) = asks.try_recv() {
                 latest = newer;
             }
-            let Ask(n, query) = latest;
+            let Ask(n, query, case_sensitive) = latest;
             asked = n;
-            let (hits, more) = index.answer(&query);
-            let _ = tell.send(Told::Answer(n, query, hits, more));
+            let (hits, more) = index.answer(&query, case_sensitive);
+            let _ = tell.send(Told::Answer(n, query, case_sensitive, hits, more));
             wake();
             continue;
         }

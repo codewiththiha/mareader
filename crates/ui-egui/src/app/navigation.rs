@@ -157,11 +157,11 @@ impl MareaderApp {
         if self.ui.find.due(ctx.input(|i| i.time), key) {
             let query = self.ui.find.query().to_owned();
             let now = ctx.input(|i| i.time);
-            self.session.execute(Command::Search { pane, query }, now);
+            self.session.execute(Command::Search { pane, query, case_sensitive: self.ui.find.case_sensitive() }, now);
             self.ui.find.asked(key);
         }
         let found = self.session.search().found(reading.doc, &reading.document);
-        let found = found.filter(|f| f.query == self.ui.find.query());
+        let found = found.filter(|f| f.query == self.ui.find.query() && f.case_sensitive == self.ui.find.case_sensitive());
         self.ui.find.settle(found, reading.current);
         let Some(i) = self.ui.find.seeking() else {
             return;
@@ -209,5 +209,5 @@ pub(super) fn found_in<'a>(
 ) -> Option<&'a Found> {
     let reading = documents.reading(find.pane()?)?;
     let found = search.found(reading.doc, &reading.document)?;
-    (found.query == find.query()).then_some(found)
+    (found.query == find.query() && found.case_sensitive == find.case_sensitive()).then_some(found)
 }

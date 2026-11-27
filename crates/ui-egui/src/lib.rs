@@ -33,6 +33,7 @@ pub mod footnote;
 pub mod glow;
 pub mod gpu;
 pub mod help_dot;
+pub mod hover_guard;
 pub mod icons;
 pub mod image_viewer;
 pub mod import;

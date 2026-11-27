@@ -37,8 +37,13 @@ impl Sidebar {
                 .pointer_hover_pos()
                 .filter(|&p| !down && edge.contains(p) && !blocked(p));
             match hit {
-                Some(p) if p.y < cx.bar_bottom => self.dwell(ctx),
-                Some(_) => self.preview(ctx),
+                Some(p) => {
+                    let guarded = p.y < cx.bar_bottom
+                        || crate::hover_guard::near(ctx, p, crate::hover_guard::Edge::Sidebar);
+                    if crate::hover_guard::rested(ctx, &mut self.edge_at, guarded) {
+                        self.preview(ctx);
+                    }
+                },
                 None => self.edge_at = None,
             }
             return;
@@ -69,14 +74,4 @@ impl Sidebar {
         }
     }
 
-    /// Opens after a rest: aiming at bar buttons often overshoots here.
-    fn dwell(&mut self, ctx: &Context) {
-        let now = ctx.input(|i| i.time);
-        let waited = now - *self.edge_at.get_or_insert(now);
-        if waited >= EDGE_DELAY {
-            self.preview(ctx);
-        } else {
-            ctx.request_repaint_after(std::time::Duration::from_secs_f64(EDGE_DELAY - waited));
-        }
-    }
 }

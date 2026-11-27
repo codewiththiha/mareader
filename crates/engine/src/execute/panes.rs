@@ -37,11 +37,11 @@ pub(super) fn run(session: &mut Session, intent: Command, now: f64) -> Done {
                 session.start_page_copy(doc, pages);
             }
         }
-        Command::Search { pane, query } => {
+        Command::Search { pane, query, case_sensitive } => {
             if let Some(doc) = session.documents().place(pane).map(|p| p.doc)
                 && let Some(document) = session.documents().document_of(pane)
             {
-                session.ask_search(doc, &document, &query);
+                session.ask_search(doc, &document, &query, case_sensitive);
             }
         }
         other => pages(session, other, now),

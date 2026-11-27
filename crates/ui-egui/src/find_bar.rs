@@ -18,7 +18,7 @@ use crate::{loading_mark, widgets};
 use mareader_engine::search::Found;
 
 pub const PLACEHOLDER: &str = "Search in document…";
-const WIDTH: f32 = 520.0;
+const WIDTH: f32 = 490.0;
 /// The capsule's height; its ends are half of it round.
 const BAR_H: f32 = 44.0;
 /// A round button in the capsule.
@@ -43,11 +43,12 @@ pub struct FindBar {
     pane: Option<PaneId>,
     /// Kept while closed, as mareader resumes its last query.
     query: String,
+    case_sensitive: bool,
     focus: bool,
     /// When the query last changed, until it is asked.
     typed: Option<f64>,
     /// The query last asked, and of which document.
-    asked: Option<(String, usize)>,
+    asked: Option<(String, usize, bool)>,
     /// The current hit.
     active: Option<usize>,
     /// An Enter waiting for its query's hits: forward or back.
@@ -98,6 +99,10 @@ impl FindBar {
         &self.query
     }
 
+    pub fn case_sensitive(&self) -> bool {
+        self.case_sensitive
+    }
+
     pub fn active(&self) -> Option<usize> {
         self.active
     }
@@ -114,13 +119,13 @@ impl FindBar {
         if self.query.trim().is_empty() {
             return false;
         }
-        let fresh = self.asked.as_ref() != Some(&(self.query.clone(), key));
+        let fresh = self.asked.as_ref() != Some(&(self.query.clone(), key, self.case_sensitive));
         fresh && self.typed.is_none_or(|t| now - t >= SETTLE)
     }
 
     /// The query was asked of document `key`: its hits start anew.
     pub fn asked(&mut self, key: usize) {
-        self.asked = Some((self.query.clone(), key));
+        self.asked = Some((self.query.clone(), key, self.case_sensitive));
         self.typed = None;
         self.active = None;
         self.seek = None;
@@ -285,6 +290,17 @@ impl FindBar {
                     if knob(ui, t, Icon::List, name, self.list).clicked() {
                         self.list = !self.list;
                         self.reveal = self.list;
+                    }
+                    let case = egui::Button::new(RichText::new("Aa").strong().color(if self.case_sensitive { t.accent } else { t.ink }))
+                        .selected(self.case_sensitive)
+                        .min_size(vec2(KNOB, KNOB));
+                    let case = ui.add(case);
+                    case.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, self.case_sensitive, "Match case"));
+                    if case.on_hover_text("Match case").clicked() {
+                        self.case_sensitive = !self.case_sensitive;
+                        self.active = None;
+                        self.seek = None;
+                        self.typed = None;
                     }
                     let (back, next) = steps(ui, t);
                     if let Some((text, tone)) = self.tally(found) {

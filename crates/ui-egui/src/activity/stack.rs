@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use egui::text::{LayoutJob, TextWrapping};
-use egui::{Context, FontId, Galley, Id, Pos2, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
+use egui::{Context, FontId, Galley, Id, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 use mareader_engine::activity::{End, Key, Row, Stage};
 use mareader_workspace::PaneId;
 
@@ -163,6 +163,7 @@ pub fn show(ctx: &Context, at: At, lines: &[Line]) -> Out {
         ctx.request_repaint();
     }
     stand(ctx, shown.response.rect);
+    crate::hover_guard::protect(ctx, shown.response.rect, true, true);
     out
 }
 
@@ -197,16 +198,15 @@ pub fn toast_lift(ctx: &Context, stage: Rect) -> f32 {
     ctx.animate_value_with_time(Id::new("toast-over-stack"), target, time)
 }
 
-/// Whether `p` is just under a stack standing this pass: leaving it
-/// downward crosses the page bar's edge, which waits for a rest there.
-pub fn under(ctx: &Context, p: Pos2) -> bool {
+/// The top of a stack overlapping this pane's lower-left column.
+pub fn top(ctx: &Context, pane: Rect) -> Option<f32> {
     let pass = ctx.cumulative_pass_nr();
     let kept: Vec<(u64, Rect)> = ctx.data(|d| d.get_temp(standing_id())).unwrap_or_default();
-    let below = |r: &Rect| {
-        let column = r.x_range().expand(COLUMN);
-        column.contains(p.x) && p.y >= r.top() && p.y - r.bottom() < SIDE
-    };
-    kept.iter().any(|(at, r)| at + 1 >= pass && below(r))
+    kept.into_iter()
+        .filter(|(at, r)| at + 1 >= pass && r.intersects(pane)
+            && r.x_range().expand(COLUMN).contains(pane.left() + INSET + SIDE / 2.0))
+        .map(|(_, r)| r.top())
+        .reduce(f32::min)
 }
 
 /// What the folded ring says of `lines`: how they stand, and how many.

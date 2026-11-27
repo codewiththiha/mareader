@@ -135,9 +135,9 @@ impl Session {
     }
 
     /// Starts or updates an index search for `query` on `document`.
-    pub(crate) fn ask_search(&mut self, doc: DocId, document: &Arc<Document>, query: &str) {
+    pub(crate) fn ask_search(&mut self, doc: DocId, document: &Arc<Document>, query: &str, case_sensitive: bool) {
         let wake = Arc::clone(&self.waker);
-        self.search.ask(wake, doc, document, query);
+        self.search.ask_case(wake, doc, document, query, case_sensitive);
     }
 
     /// Polls running document searches; true if any hits arrived.

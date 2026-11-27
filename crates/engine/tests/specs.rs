@@ -191,6 +191,7 @@ fn page_intents() -> Vec<Command> {
         Command::Search {
             pane,
             query: String::new(),
+            case_sensitive: false,
         },
         Command::WordList {
             pane,

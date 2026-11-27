@@ -123,6 +123,7 @@ fn search_wakes_and_finds_matches_through_tick() {
         Command::Search {
             pane,
             query: query.clone(),
+            case_sensitive: false,
         },
         1.0,
     );

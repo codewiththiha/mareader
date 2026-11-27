@@ -108,6 +108,16 @@ impl Page {
                 keep
             });
         }
+        if let Some(case) = &needle.case {
+            hits.retain(|range| {
+                let actual = self.shown.chars().enumerate()
+                    .skip(range.start).take(range.end - range.start)
+                    .filter(|(at, _)| !self.soft.iter().any(|(soft, _)| *soft as usize == *at))
+                    .map(|(_, c)| c);
+                actual.zip(case.chars()).all(|(a, b)| a.is_uppercase() == b.is_uppercase()
+                    && a.is_lowercase() == b.is_lowercase())
+            });
+        }
         hits
     }
 
@@ -267,25 +277,33 @@ impl<'a> Chars<'a> {
 pub struct Needle {
     folded: String,
     chars: usize,
+    case: Option<String>,
 }
 
 impl Needle {
     /// None for a query of nothing but spaces.
     pub fn new(query: &str) -> Option<Self> {
+        Self::with_case(query, false)
+    }
+
+    /// Preserve the query's letter case while keeping the usual accent folding.
+    pub fn with_case(query: &str, sensitive: bool) -> Option<Self> {
         let mut folded = String::new();
+        let mut original = String::new();
         for word in query.split_whitespace() {
             if !folded.is_empty() {
                 folded.push(' ');
+                original.push(' ');
             }
             for c in word.chars().filter(|c| !invisible(*c)) {
                 match spell(c) {
-                    Some(letters) => folded.extend(letters.chars().map(fold)),
-                    None => folded.push(fold(c)),
+                    Some(letters) => { folded.extend(letters.chars().map(fold)); original.push_str(letters); },
+                    None => { folded.push(fold(c)); original.push(c); },
                 }
             }
         }
         let chars = folded.chars().count();
-        (chars > 0).then_some(Self { folded, chars })
+        (chars > 0).then_some(Self { folded, chars, case: sensitive.then_some(original) })
     }
 }
 
@@ -314,6 +332,18 @@ mod tests {
                 .collect::<Vec<_>>()
         });
         Page::new(glyphs)
+    }
+
+    #[test]
+    fn case_sensitive_search_preserves_other_folding_and_split_words() {
+        let p = page(&["Fox fox Fóx", "Inter-", "national international"]);
+        let needle = Needle::with_case("Fox", true).unwrap();
+        assert_eq!(p.find(&needle).len(), 2);
+        let needle = Needle::with_case("fox", true).unwrap();
+        assert_eq!(p.find(&needle).len(), 1);
+        let needle = Needle::with_case("International", true).unwrap();
+        assert_eq!(p.find(&needle).len(), 1);
+        assert_eq!(p.find(&Needle::new("fox").unwrap()).len(), 3);
     }
 
     fn found(p: &Page, q: &str) -> Vec<String> {

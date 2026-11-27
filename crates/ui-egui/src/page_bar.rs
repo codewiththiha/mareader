@@ -12,7 +12,6 @@ use crate::documents::Reading;
 use crate::gpu::{Look, Reach};
 use crate::icons::Icon;
 use crate::motion;
-use crate::sidebar::EDGE_DELAY;
 use crate::theme::{self, Tokens};
 use crate::titlebar::{FADE, HIDE_GRACE};
 use crate::ui_command::{Commands, Sent};
@@ -58,7 +57,7 @@ impl PageBar {
         let band = Rect::from_min_max(pos2(pane.left(), pane.bottom() - reach), pane.max);
         let on = widgets::bare_pointer(ctx, own).filter(|&p| band.contains(p));
         let inside = match on {
-            Some(p) if !self.shown => self.rested(ctx, p, now),
+            Some(p) if !self.shown => crate::hover_guard::rested(ctx, &mut self.edge_at, crate::hover_guard::near(ctx, p, crate::hover_guard::Edge::PageBar)),
             Some(_) => true,
             None => {
                 self.edge_at = None;
@@ -79,18 +78,7 @@ impl PageBar {
         }
     }
 
-    /// Whether the pointer at `p` on the edge brings the bar up: under
-    /// the AI stack only after a rest, as leaving it downward crosses here.
-    fn rested(&mut self, ctx: &Context, p: egui::Pos2, now: f64) -> bool {
-        if !crate::activity::stack::under(ctx, p) {
-            return true;
-        }
-        let waited = now - *self.edge_at.get_or_insert(now);
-        if waited < EDGE_DELAY {
-            ctx.request_repaint_after_secs((EDGE_DELAY - waited) as f32);
-        }
-        waited >= EDGE_DELAY
-    }
+
 }
 
 /// The counter's text: "3 / 20", "3 / 12+" while loading, or "15%".

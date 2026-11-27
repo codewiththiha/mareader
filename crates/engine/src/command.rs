@@ -162,6 +162,7 @@ pub enum Command {
     Search {
         pane: PaneId,
         query: String,
+        case_sensitive: bool,
     },
     /// Selects the first `text` on `page` in the pane, as a drag does.
     SelectText {

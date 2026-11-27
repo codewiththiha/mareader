@@ -1,6 +1,6 @@
 //! The reader's way back to the word that opened it.
 
-use egui::{Context, Frame, Id, Margin, Rect, RichText, Stroke, vec2};
+use egui::{Context, Frame, Id, Margin, Rect, RichText, Stroke};
 use mareader_engine::space::Filter;
 use mareader_library::BookId;
 
@@ -39,10 +39,16 @@ pub(super) fn show(ctx: &Context, back: &mut Return, pane: Rect, bar: bool) -> b
             crate::page_bar::COUNTER_INSET
         };
     let mut pos = egui::pos2(pane.left() + 12.0, bottom - 36.0);
-    if stack::under(ctx, pos + vec2(18.0, 18.0)) {
-        pos.y -= 46.0;
+    let ceiling = stack::top(ctx, pane).map(|top| top - 42.0);
+    if let Some(y) = ceiling {
+        pos.y = pos.y.min(y);
     }
     let id = Id::new("vocab-return");
+    let secs = crate::motion::secs(ctx, 0.2);
+    pos.y = ctx.animate_value_with_time(id.with("y"), pos.y, secs);
+    if let Some(y) = ceiling {
+        pos.y = pos.y.min(y);
+    }
     let hovered = ctx.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     let started = *back.started.get_or_insert(now);
     let expanded = now < started + 5.0 || hovered;
@@ -78,6 +84,7 @@ pub(super) fn show(ctx: &Context, back: &mut Return, pane: Rect, bar: bool) -> b
                 })
                 .inner
         });
+    crate::hover_guard::protect(ctx, shown.response.rect, true, true);
     let over = shown.response.contains_pointer();
     ctx.data_mut(|d| d.insert_temp(id, over));
     shown.inner
