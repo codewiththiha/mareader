@@ -129,7 +129,10 @@ impl AiStore {
 
     /// Removes selected words and classes in all languages, atomically.
     pub fn forget_words(&self, words: &[(String, Option<String>)]) -> Result<usize, String> {
-        let tx = self.conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let tx = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| e.to_string())?;
         let mut count = 0;
         for (word, pos) in words {
             let n = match pos {

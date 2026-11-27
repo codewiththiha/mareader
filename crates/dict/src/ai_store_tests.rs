@@ -130,3 +130,16 @@ fn a_language_clears_alone() {
     assert_eq!(store.langs().unwrap(), ["my"]);
     assert_eq!(store.clear("vi").unwrap(), 0, "already gone");
 }
+
+#[test]
+fn selected_words_are_removed_across_languages_without_touching_other_classes() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = AiStore::open(&file(dir.path())).unwrap();
+    for one in [saved("book", "noun", "en", "pages"), saved("book", "noun", "ja", "本"), saved("book", "verb", "en", "reserve"), saved("tea", "noun", "en", "drink")] {
+        store.put(&one, false).unwrap();
+    }
+    assert_eq!(store.forget_words(&[("BOOK".into(), Some(" noun ".into()))]).unwrap(), 2);
+    assert!(store.get("book", "verb", "en").unwrap().is_some());
+    assert!(store.get("tea", "noun", "en").unwrap().is_some());
+    assert_eq!(store.forget_words(&[("book".into(), None)]).unwrap(), 1);
+}

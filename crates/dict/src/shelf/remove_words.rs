@@ -11,5 +11,4 @@ impl Shelf {
         reply.ai_langs = Some(self.ai_langs());
         reply
     }
-
 }

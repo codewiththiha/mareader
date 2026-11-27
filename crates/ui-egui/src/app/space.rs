@@ -24,7 +24,9 @@ impl MareaderApp {
             self.ui.space.set_lookup_ticket(ticket);
         }
         if let Some(words) = self.ui.space.take_delete_ai() {
-            let ticket = self.session.dict_ask(mareader_dict::Query::ForgetWords { words });
+            let ticket = self
+                .session
+                .dict_ask(mareader_dict::Query::ForgetWords { words });
             self.ui.space.set_delete_ticket(ticket);
         }
         if let Some(Ask::Export(csv)) = asked {

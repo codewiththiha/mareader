@@ -56,7 +56,17 @@ pub(super) fn show(ui: &mut Ui, view: &View, shown: Shown<'_>, t: &Tokens, out: 
         heading(ui, section, t);
         match cards {
             true => grid(ui, &section.rows, picked, selection, scope, reveal, t, out),
-            false => sheet(ui, &section.rows, open, picked, selection, scope, reveal, t, out),
+            false => sheet(
+                ui,
+                &section.rows,
+                open,
+                picked,
+                selection,
+                scope,
+                reveal,
+                t,
+                out,
+            ),
         }
         ui.add_space(8.0);
     }
@@ -103,7 +113,9 @@ fn sheet(
                 let (rule, _) = ui.allocate_exact_size(size, Sense::hover());
                 ui.painter().hline(rule.x_range(), rule.center().y, edge);
             }
-            ui.push_id(row.key, |ui| line(ui, row, open, picked, selection, scope, reveal, t, out));
+            ui.push_id(row.key, |ui| {
+                line(ui, row, open, picked, selection, scope, reveal, t, out)
+            });
         }
     });
 }
@@ -123,13 +135,15 @@ fn line(
     let is_open = *open == Some(row.key);
     let hit = row_hit(ui, row, vec2(ui.available_width(), 84.0));
     let frame = Frame::new()
-        .fill(if selection.is_selected(row) || reveal.as_ref().is_some_and(|r| r.0 == row.key) {
-            t.accent_soft
-        } else if hit.hovered() {
-            t.hover
-        } else {
-            egui::Color32::TRANSPARENT
-        })
+        .fill(
+            if selection.is_selected(row) || reveal.as_ref().is_some_and(|r| r.0 == row.key) {
+                t.accent_soft
+            } else if hit.hovered() {
+                t.hover
+            } else {
+                egui::Color32::TRANSPARENT
+            },
+        )
         .inner_margin(Margin::symmetric(18, 12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -173,7 +187,17 @@ fn line(
                 });
             }
         });
-    pick(ui, row, frame.response.rect, hit, picked, selection, scope, reveal, out);
+    pick(
+        ui,
+        row,
+        frame.response.rect,
+        hit,
+        picked,
+        selection,
+        scope,
+        reveal,
+        out,
+    );
 }
 
 /// The words as cards, as many to a line as the page has room for.
@@ -195,7 +219,9 @@ fn grid(
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = GAP;
             for row in line {
-                ui.push_id(row.key, |ui| card(ui, row, picked, selection, scope, reveal, t, out));
+                ui.push_id(row.key, |ui| {
+                    card(ui, row, picked, selection, scope, reveal, t, out)
+                });
             }
         });
     }
@@ -213,9 +239,15 @@ fn card(
 ) {
     let hit = row_hit(ui, row, vec2(CARD_W + CARD_EDGES, 180.0));
     let frame = Frame::new()
-        .fill(if selection.is_selected(row) || reveal.as_ref().is_some_and(|r| r.0 == row.key) {
-            t.accent_soft
-        } else if hit.hovered() { t.hover } else { t.card })
+        .fill(
+            if selection.is_selected(row) || reveal.as_ref().is_some_and(|r| r.0 == row.key) {
+                t.accent_soft
+            } else if hit.hovered() {
+                t.hover
+            } else {
+                t.card
+            },
+        )
         .stroke(Stroke::new(1.0, t.line))
         .corner_radius(look::ROUND)
         .inner_margin(Margin::same(16))
@@ -242,7 +274,17 @@ fn card(
                 ui.horizontal(|ui| memorize(ui, row, out, t));
             });
         });
-    pick(ui, row, frame.response.rect, hit, picked, selection, scope, reveal, out);
+    pick(
+        ui,
+        row,
+        frame.response.rect,
+        hit,
+        picked,
+        selection,
+        scope,
+        reveal,
+        out,
+    );
 }
 
 fn row_hit(ui: &mut Ui, row: &Row, size: egui::Vec2) -> egui::Response {
@@ -286,15 +328,19 @@ fn pick(
         selection.visible(row);
     }
     if let Some((key, pending, _)) = reveal
-        && *key == row.key && *pending
+        && *key == row.key
+        && *pending
     {
         ui.scroll_to_rect(rect, Some(Align::Center));
         *pending = false;
     }
     selection.menu(ui, &hit, row, scope, out);
     if hit.clicked() {
-        if selection.active() { selection.toggle(row); }
-        else { *picked = Some((row.clone(), rect.intersect(ui.clip_rect()))); }
+        if selection.active() {
+            selection.toggle(row);
+        } else {
+            *picked = Some((row.clone(), rect.intersect(ui.clip_rect())));
+        }
     }
 }
 
@@ -366,9 +412,16 @@ fn books(ui: &mut Ui, row: &Row, t: &Tokens, out: &mut Commands) {
         }
         let words = RichText::new(title).size(t.text_small).color(t.muted);
         if look::link(ui, words, false, &open_book(title)).clicked() {
-            let quote = row.met_at.as_ref().filter(|at| at.book == *id)
+            let quote = row
+                .met_at
+                .as_ref()
+                .filter(|at| at.book == *id)
                 .map_or_else(|| row.form.clone(), |at| at.quote.clone());
-            out.push(Sent::Ui(UiCommand::FindVocabInBook { book: *id, quote, row: row.key }));
+            out.push(Sent::Ui(UiCommand::FindVocabInBook {
+                book: *id,
+                quote,
+                row: row.key,
+            }));
         }
     }
 }
@@ -401,7 +454,11 @@ fn sentence(ui: &mut Ui, row: &Row, t: &Tokens, out: &mut Commands) {
             let link = link.on_hover_text(tip);
             if link.clicked() {
                 let (book, quote) = (at.book, at.quote.clone());
-                out.push(Sent::Ui(UiCommand::FindVocabInBook { book, quote, row: row.key }));
+                out.push(Sent::Ui(UiCommand::FindVocabInBook {
+                    book,
+                    quote,
+                    row: row.key,
+                }));
             }
         }
         None => {
@@ -415,7 +472,14 @@ fn sentence(ui: &mut Ui, row: &Row, t: &Tokens, out: &mut Commands) {
 }
 
 /// Memorize or un-memorize, then forget: each acts on the word everywhere.
-fn actions(ui: &mut Ui, row: &Row, out: &mut Commands, t: &Tokens, selection: &mut Selection, scope: space::Scope) {
+fn actions(
+    ui: &mut Ui,
+    row: &Row,
+    out: &mut Commands,
+    t: &Tokens,
+    selection: &mut Selection,
+    scope: space::Scope,
+) {
     ui.spacing_mut().item_spacing.x = 6.0;
     memorize(ui, row, out, t);
     forget(ui, row, selection, scope);

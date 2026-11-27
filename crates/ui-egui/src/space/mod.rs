@@ -11,9 +11,9 @@ mod hub;
 mod look;
 mod notes;
 mod rail;
+mod returning;
 mod rows;
 mod selection;
-mod returning;
 mod sentence;
 mod top;
 
@@ -132,12 +132,28 @@ impl SpaceUi {
     }
 
     pub fn remember_return(&mut self, book: BookId, row: u128, now: f64) {
-        self.return_to = Some(returning::Return::new(book, row, self.filter.clone(), self.cards, now));
+        self.return_to = Some(returning::Return::new(
+            book,
+            row,
+            self.filter.clone(),
+            self.cards,
+            now,
+        ));
     }
 
-    pub fn show_return(&mut self, ctx: &egui::Context, book: Option<BookId>, rect: Rect, bar: bool) -> bool {
-        let Some(back) = &self.return_to else { return false; };
-        if Some(back.book) != book || !returning::show(ctx, back, rect, bar) { return false; }
+    pub fn show_return(
+        &mut self,
+        ctx: &egui::Context,
+        book: Option<BookId>,
+        rect: Rect,
+        bar: bool,
+    ) -> bool {
+        let Some(back) = &self.return_to else {
+            return false;
+        };
+        if Some(back.book) != book || !returning::show(ctx, back, rect, bar) {
+            return false;
+        }
         if let Some(back) = self.return_to.take() {
             self.filter = back.filter;
             self.cards = back.cards;
@@ -168,7 +184,10 @@ impl SpaceUi {
     }
 
     pub fn receive(&mut self, replies: &[mareader_dict::Reply]) {
-        if let Some(reply) = replies.iter().find(|r| Some(r.ticket) == self.delete_ticket) {
+        if let Some(reply) = replies
+            .iter()
+            .find(|r| Some(r.ticket) == self.delete_ticket)
+        {
             self.delete_ticket = None;
             self.delete_error = reply.failed.clone();
         }
@@ -210,11 +229,19 @@ impl SpaceUi {
         out: &mut Commands,
     ) -> Option<Ask> {
         let key = (self.filter.clone(), self.cards);
-        if self.selection_filter.as_ref().is_some_and(|old| old != &key) {
+        if self
+            .selection_filter
+            .as_ref()
+            .is_some_and(|old| old != &key)
+        {
             self.selection = selection::Selection::default();
         }
         self.selection_filter = Some(key);
-        if self.reveal.as_ref().is_some_and(|r| ui.ctx().input(|i| i.time) > r.2) {
+        if self
+            .reveal
+            .as_ref()
+            .is_some_and(|r| ui.ctx().input(|i| i.time) > r.2)
+        {
             self.reveal = None;
         }
         let view = space::view(lib, &self.filter);

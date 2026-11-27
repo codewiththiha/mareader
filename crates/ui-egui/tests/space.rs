@@ -370,3 +370,81 @@ fn word_details_open_from_cards_without_breaking_row_actions() {
     h.run();
     assert_eq!(status(&h, "ponder"), Some(WordStatus::Memorized));
 }
+
+fn right_click(h: &mut H, label: &str) {
+    h.query_all_by_label(label).next().expect("row").click_secondary();
+    h.run_steps(4);
+}
+
+fn confirm_delete(h: &mut H) {
+    h.get_by_label("Delete").click();
+    h.run();
+    h.get_by_label("Are you sure?").click();
+    h.run_steps(3);
+}
+
+#[test]
+fn context_delete_one_book_and_merged_delete_all_books() {
+    let mut h = words();
+    let id = h.state().session().library_model().words().find(|w| w.lemma == "gaunt").unwrap().id;
+    assert_eq!(h.state().session().library_model().sightings_of(id).len(), 2);
+    right_click(&mut h, "Details for gaunt");
+    h.get_by_label("Delete…").click();
+    h.run();
+    confirm_delete(&mut h);
+    assert_eq!(h.state().session().library_model().sightings_of(id).len(), 1);
+    assert!(h.state().session().library_model().word(id).is_some());
+
+    let mut h = words();
+    h.get_by_label("Merged").click();
+    h.run();
+    let id = h.state().session().library_model().words().find(|w| w.lemma == "gaunt").unwrap().id;
+    right_click(&mut h, "Details for gaunt");
+    h.get_by_label("Delete…").click();
+    h.run();
+    confirm_delete(&mut h);
+    assert!(h.state().session().library_model().sightings_of(id).is_empty());
+    assert!(h.state().session().library_model().word(id).is_none());
+}
+
+#[test]
+fn cards_and_list_have_context_selection() {
+    for cards in [false, true] {
+        let mut h = words();
+        h.get_by_label("Merged").click();
+        h.run();
+        if cards { h.get_by_label("Cards").click(); h.run(); }
+        right_click(&mut h, "Details for gaunt");
+        h.get_by_label("Select").click();
+        h.run();
+        assert!(h.query_by_label("1 selected").is_some());
+        h.get_by_label("Clear selection").click();
+        h.run();
+        assert!(h.query_by_label("1 selected").is_none());
+        right_click(&mut h, "Details for gaunt");
+        h.get_by_label("Select all visible").click();
+        h.run();
+        assert!(h.query_by_label_contains("selected").is_some());
+    }
+}
+
+#[test]
+fn context_navigation_can_return_to_its_word() -> Out {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let raven = dir.join("../epub/tests/books/the-raven-gutenberg-17192.epub").canonicalize()?;
+    let mut h = reader(&[("epub", raven.to_str().ok_or("UTF-8 path")?)]);
+    h.run_steps(3);
+    act(&mut h, Action::SeedWords);
+    h.state_mut().queue(Sent::Engine(Command::ShowSpace(Room::Words)));
+    h.run_steps(3);
+    right_click(&mut h, "Details for lintel");
+    h.get_by_label("Go to word in book").click();
+    h.run_steps(30);
+    assert_eq!(h.state().route(), Route::Reader);
+    assert_eq!(h.state().find().query(), "ducked beneath the lintel of the low");
+    h.get_by_label("Go back to vocabs").click();
+    h.run_steps(30);
+    assert_eq!(h.state().route(), Route::Space);
+    assert!(h.query_by_label("Details for lintel").is_some());
+    Ok(())
+}

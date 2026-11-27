@@ -219,7 +219,9 @@ impl MareaderApp {
     fn dict_replies(&mut self, changed: bool, replies: Vec<mareader_dict::Reply>) {
         self.ui.space.receive(&replies);
         if let Some(why) = self.ui.space.take_delete_error() {
-            self.ui.toasts.push(Toast::error(format!("Could not delete AI dictionary meanings: {why}")));
+            self.ui.toasts.push(Toast::error(format!(
+                "Could not delete AI dictionary meanings: {why}"
+            )));
         }
         let exact = !self.settings().dictionary.near;
         self.ui.dict.set_exact_only(exact);
@@ -340,7 +342,9 @@ impl MareaderApp {
                 self.ui.find_on_open = Some((book, quote, ctx.input(|i| i.time)));
             }
             UiCommand::FindVocabInBook { book, quote, row } => {
-                self.ui.space.remember_return(book, row, ctx.input(|i| i.time));
+                self.ui
+                    .space
+                    .remember_return(book, row, ctx.input(|i| i.time));
                 self.apply(ctx, Sent::Engine(Command::OpenBook(book)));
                 if !quote.is_empty() {
                     self.ui.find_on_open = Some((book, quote, ctx.input(|i| i.time)));
