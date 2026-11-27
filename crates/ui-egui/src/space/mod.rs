@@ -11,6 +11,7 @@ mod look;
 mod notes;
 mod rail;
 mod rows;
+mod sentence;
 mod top;
 
 use egui::{Align, Layout, Rect, Ui, UiBuilder, pos2, vec2};

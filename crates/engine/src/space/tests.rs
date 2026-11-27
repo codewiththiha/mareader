@@ -114,6 +114,29 @@ fn with_books_a_row_is_a_sighting_and_merged_a_word() {
 }
 
 #[test]
+fn merged_sentence_keeps_the_form_of_its_own_sighting() {
+    let mut lib = Library::new(DeviceId(1));
+    let older = book(&mut lib, "Older", 11);
+    let newer = book(&mut lib, "Newer", 12);
+    let earlier = NewWord {
+        form: "ran".into(),
+        context: "She ran home.".into(),
+        ..noun("run", 2)
+    };
+    let later = NewWord {
+        form: "run".into(),
+        context: String::new(),
+        ..noun("run", 2)
+    };
+    lib.record_word(older, earlier, OCT);
+    lib.record_word(newer, later, NOV);
+    let shown = view(&lib, &az(Scope::Merged));
+    let row = shown.rows().next().expect("a merged word");
+    assert_eq!((&*row.context, &*row.form), ("She ran home.", "ran"));
+    assert_eq!(row.met_at.as_ref().map(|at| at.book), Some(older));
+}
+
+#[test]
 fn the_tabs_count_every_filter_but_their_own() {
     let lib = shelf();
     let filter = Filter {

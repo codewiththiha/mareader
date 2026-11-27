@@ -126,6 +126,7 @@ fn row(key: u128, mets: &[&Met<'_>]) -> Option<Row> {
         status: head.word.status.value,
         meaning: first_said(mets.iter().map(|m| m.seen.meaning.value.as_str())),
         context: first_said(mets.iter().map(|m| m.seen.context.value.as_str())),
+        form: said.map_or_else(String::new, |m| m.seen.form.value.clone()),
         books,
         book_ids,
         met_at,

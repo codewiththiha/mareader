@@ -182,6 +182,8 @@ pub struct Row {
     pub meaning: String,
     /// The book's sentence around it.
     pub context: String,
+    /// The form appearing in the chosen sentence.
+    pub form: String,
     /// The titles of the books it was met in, most recent first.
     pub books: Vec<String>,
     /// The ids of `books`, in the same order.

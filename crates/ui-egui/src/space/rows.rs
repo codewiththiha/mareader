@@ -6,7 +6,7 @@ use mareader_engine::command::Command;
 use mareader_engine::space::{self, Action, Row, Section, View};
 use mareader_library::{LearnedBy, WordStatus};
 
-use super::look;
+use super::{look, sentence};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent, UiCommand};
@@ -263,15 +263,19 @@ pub fn open_sentence(lemma: &str) -> String {
 /// The book's sentence, which opens the book there, and how many books
 /// met the word.
 fn sentence(ui: &mut Ui, row: &Row, t: &Tokens, out: &mut Commands) {
-    let said = RichText::new(&row.context).font(theme::serif(t.text + 1.0));
-    let said = said.color(t.ink).italics();
+    let said = sentence::highlight(&row.context, &row.form, t);
     match &row.met_at {
         Some(at) => {
             let label = open_sentence(&row.lemma);
             let at_book = row.book_ids.iter().position(|b| *b == at.book);
             let title = at_book.and_then(|i| row.books.get(i));
             let tip = title.map_or_else(|| BOOK_HERE.to_owned(), |t| format!("Open {t} here"));
-            let link = look::link(ui, said, true, &label).on_hover_text(tip);
+            let link = ui.add(Label::new(said).wrap().sense(Sense::click()));
+            link.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Link, true, &label));
+            if link.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            let link = link.on_hover_text(tip);
             if link.clicked() {
                 let (book, quote) = (at.book, at.quote.clone());
                 out.push(Sent::Ui(UiCommand::FindInBook { book, quote }));
