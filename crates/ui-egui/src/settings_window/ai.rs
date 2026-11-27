@@ -2,10 +2,9 @@
 
 use egui::{Align, FontId, Layout, Sense, Ui, pos2, vec2};
 use mareader_assist::{Board, Job, Load};
-use mareader_dict::LANGUAGES;
 use mareader_settings::{
-    AiSettings, GlossDensity, GlossSettings, HighlightSettings, ModelPreset, OrganizeTask, PageRun,
-    PageStart, PageTask, Pen, PresetId, Provider, SummaryStyle, TaskId,
+    AiSettings, GlossDensity, GlossSettings, HighlightSettings, OrganizeTask, PageRun, PageStart,
+    PageTask, Pen, Provider, SummaryStyle, TaskId,
 };
 
 use super::highlights::{palette, preview};
@@ -19,7 +18,9 @@ use mareader_engine::settings::Tab;
 
 mod busy;
 mod cards_picker;
+mod pickers;
 use cards_picker::cards_picker;
+pub(super) use pickers::{language_picker, preset_picker};
 
 const PICK_W: f32 = 240.0;
 const DICTIONARY: &str = TaskId::Explain.spec().label;
@@ -429,53 +430,6 @@ fn start_picker(ui: &mut Ui, salt: &str, start: &mut PageStart) {
         .show_ui(ui, |ui| {
             for s in [PageStart::Ask, PageStart::Page, PageStart::Continuous] {
                 ui.selectable_value(start, s, name(s));
-            }
-        });
-}
-
-/// A saved model for a task, or `none`.
-pub(super) fn preset_picker(
-    ui: &mut Ui,
-    salt: &str,
-    presets: &[ModelPreset],
-    chosen: &mut Option<PresetId>,
-    none: &str,
-) {
-    let title = |id: PresetId| presets.iter().find(|p| p.id == id).map(ModelPreset::title);
-    let shown = chosen.and_then(title).unwrap_or_else(|| none.to_owned());
-    widgets::combo(salt)
-        .width(PICK_W)
-        .selected_text(shown)
-        .show_ui(ui, |ui| {
-            ui.selectable_value(chosen, None, none);
-            for p in presets {
-                ui.selectable_value(chosen, Some(p.id), p.title());
-            }
-        });
-}
-
-/// The book's language or a listed one; ones Apple can't write are greyed.
-pub(super) fn language_picker(
-    ui: &mut Ui,
-    (salt, none): (&str, &str),
-    chosen: &mut Option<String>,
-    speaks: &dyn Fn(&str) -> Option<bool>,
-) {
-    let name = chosen.as_deref().and_then(mareader_settings::language_name);
-    widgets::combo(salt)
-        .width(PICK_W)
-        .height(320.0)
-        .selected_text(name.unwrap_or(none))
-        .show_ui(ui, |ui| {
-            ui.selectable_value(chosen, None, none);
-            for (tag, name) in LANGUAGES.map(|l| (l.tag, l.name)) {
-                let on = chosen.as_deref() == Some(tag);
-                let button = egui::Button::selectable(on, name);
-                let r = ui.add_enabled(speaks(tag) != Some(false), button);
-                if r.clicked() {
-                    *chosen = Some(tag.to_owned());
-                }
-                r.on_disabled_hover_text("Apple Intelligence doesn't write this language");
             }
         });
 }

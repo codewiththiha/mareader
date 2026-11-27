@@ -298,4 +298,15 @@ fn writer_sizes_belong_to_models_and_do_not_select_them() {
     assert_eq!(ai.presets[0].cards_per_request, 11);
     assert_eq!(ai.presets[1].cards_per_request, 10);
     assert_eq!(ai.tasks.choice(TaskId::StudyCards), Some(ai.presets[0].id));
+    h.event(Event::Text("second".into()));
+    h.run();
+    assert!(h.query_by_label("Find a model").is_some());
+    assert!(
+        h.query_by_label("More cards per request for Ollama · first")
+            .is_none()
+    );
+    h.key_press(egui::Key::Enter);
+    h.run();
+    let ai = &h.state().settings().ai;
+    assert_eq!(ai.tasks.choice(TaskId::StudyCards), Some(ai.presets[1].id));
 }

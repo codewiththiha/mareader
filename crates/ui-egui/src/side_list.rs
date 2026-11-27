@@ -140,7 +140,7 @@ pub fn show_beside<T: Clone>(
     let mut picked = None;
     let (popup, list_h) = popup(&resp, id.with("list"), open, spec.width, parent);
     let shown = popup.show(|ui| {
-        picked = contents(ui, (&spec, id), &mut state, list_h, cell);
+        picked = contents(ui, (&spec, id), &mut state, list_h, true, &|_| true, cell);
         ui.layer_id()
     });
     let (pos, pressed) = ui.input(|i| (i.pointer.interact_pos(), i.pointer.any_pressed()));
@@ -215,12 +215,38 @@ fn popup<'a>(
     (popup, list_h)
 }
 
+/// Searchable contents for a dropdown, sharing the side-list keyboard and
+/// type-to-search behavior. Buttons in `cell` may act without picking.
+pub fn dropdown<T: Clone>(
+    ui: &mut Ui,
+    id: Id,
+    spec: Spec<'_, T>,
+    enabled: &dyn Fn(&T) -> bool,
+    cell: impl FnMut(&mut Ui, &T, &str) -> bool,
+) -> Option<T> {
+    let pass = ui.ctx().cumulative_pass_nr();
+    let mut state: State = ui.data_mut(|d| d.get_temp(id)).unwrap_or_default();
+    let fresh = state.pass == 0 || state.pass + 1 < pass;
+    if fresh {
+        state = State::default();
+    }
+    state.pass = pass;
+    let picked = contents(ui, (&spec, id), &mut state, LIST_H, fresh, enabled, cell);
+    if picked.is_none() && ui.input(|i| i.pointer.any_released()) {
+        ui.memory_mut(|m| m.request_focus(id.with("find")));
+    }
+    ui.data_mut(|d| d.insert_temp(id, state));
+    picked
+}
+
 /// The open list: its search field over its items; the one picked.
 fn contents<T: Clone>(
     ui: &mut Ui,
     (spec, id): (&Spec<'_, T>, Id),
     state: &mut State,
     list_h: f32,
+    focus: bool,
+    enabled: &dyn Fn(&T) -> bool,
     cell: impl FnMut(&mut Ui, &T, &str) -> bool,
 ) -> Option<T> {
     crate::z_order::register_popup(ui.ctx(), ui.layer_id());
@@ -228,12 +254,12 @@ fn contents<T: Clone>(
     let step = arrows(ui);
     state.keyboard |= step != 0;
     let typed = state.query.clone();
-    let enter = find(ui, (id, spec.find), &mut state.query);
+    let enter = find(ui, (id, spec.find), &mut state.query, focus);
     if state.query != typed {
         state.lit = 0;
     }
     let keys = (enter, step, &mut state.lit, state.keyboard);
-    list(ui, spec, &state.query, keys, list_h, cell)
+    list(ui, spec, &state.query, keys, list_h, enabled, cell)
 }
 
 /// Wakes the frame when a hovered list's grace runs out.
@@ -262,7 +288,7 @@ fn arrows(ui: &Ui) -> i8 {
 /// The search field, named `name`: it holds the keys while the list
 /// shows, and slides in once something is typed. True when Enter picks
 /// the lit match.
-fn find(ui: &mut Ui, (id, name): (Id, &str), query: &mut String) -> bool {
+fn find(ui: &mut Ui, (id, name): (Id, &str), query: &mut String, focus: bool) -> bool {
     let k = ui
         .ctx()
         .animate_bool_with_time(id.with("find-in"), !query.is_empty(), SLIDE);
@@ -294,7 +320,7 @@ fn find(ui: &mut Ui, (id, name): (Id, &str), query: &mut String) -> bool {
     let field = input.clearable(true).compact().show(&mut child).response;
     // Read before the keys are taken back, or Enter never counts.
     let enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-    if !field.has_focus() {
+    if focus && !field.has_focus() {
         field.request_focus();
     }
     enter
@@ -308,21 +334,28 @@ fn list<T: Clone>(
     query: &str,
     (enter, step, lit, keyboard): (bool, i8, &mut usize, bool),
     list_h: f32,
+    enabled: &dyn Fn(&T) -> bool,
     mut cell: impl FnMut(&mut Ui, &T, &str) -> bool,
 ) -> Option<T> {
     let find = query.trim().to_lowercase();
     let found: Vec<&(T, String)> = (spec.items.iter())
         .filter(|(_, name)| find.is_empty() || name.to_lowercase().contains(&find))
         .collect();
-    let last = found.len().saturating_sub(1);
+    let available: Vec<usize> = found
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (item, _))| enabled(item).then_some(i))
+        .collect();
+    let last = available.len().saturating_sub(1);
     let moved = match step {
         1 => *lit + 1,
         -1 => lit.saturating_sub(1),
         _ => *lit,
     };
     *lit = moved.min(last);
-    let mut picked = found
-        .get(*lit)
+    let active = available.get(*lit).copied();
+    let mut picked = active
+        .and_then(|i| found.get(i))
         .map(|(item, _)| item.clone())
         .filter(|_| enter);
     let light = Tokens::get(ui.ctx()).accent_soft;
@@ -330,10 +363,10 @@ fn list<T: Clone>(
         for (i, (item, name)) in found.iter().enumerate() {
             let under = ui.painter().add(Shape::Noop);
             let top = ui.cursor().top();
-            if cell(ui, item, name) {
+            if cell(ui, item, name) && enabled(item) {
                 picked = Some(item.clone());
             }
-            if (find.is_empty() && !keyboard) || i != *lit {
+            if (find.is_empty() && !keyboard) || Some(i) != active {
                 continue;
             }
             let rows = ui.min_rect();
