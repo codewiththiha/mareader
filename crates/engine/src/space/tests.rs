@@ -174,7 +174,10 @@ fn detail_lists_all_books_with_the_clicked_book_first() {
     let lib = shelf();
     let view = view(&lib, &az(Scope::Books));
     for (clicked, other) in [("Dune", "Emma"), ("Emma", "Dune")] {
-        let source = view.rows().find(|r| r.lemma == "lintel" && r.books == [clicked]).expect("sighting");
+        let source = view
+            .rows()
+            .find(|r| r.lemma == "lintel" && r.books == [clicked])
+            .expect("sighting");
         let detail = detail_row(&lib, source.clone());
         assert_eq!(detail.books, [clicked, other]);
         assert_eq!(detail.book_ids.first(), source.book_ids.first());

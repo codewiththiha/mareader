@@ -160,7 +160,7 @@ fn unique<'a>(items: impl Iterator<Item = &'a String>) -> Vec<String> {
 /// Expand a clicked row with every other book where its word was encountered.
 /// The row's own books stay first, without changing its sentence or meaning.
 pub fn detail_row(lib: &Library, mut row: Row) -> Row {
-    let mut seen: Vec<_> = lib.sightings_of(row.word).collect();
+    let mut seen = lib.sightings_of(row.word);
     seen.sort_by_key(|s| Reverse(s.seen.value));
     for sighting in seen {
         let id = sighting.book.value;

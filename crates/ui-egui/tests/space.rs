@@ -198,7 +198,11 @@ fn recall_scrolls_independently_of_the_word_and_header() {
     h.run();
     h.get_by_label("Details for gaunt").click();
     h.run_steps(30);
-    let first = h.query_all_by_label("Wrong").next().expect("first attempt").rect();
+    let first = h
+        .query_all_by_label("Wrong")
+        .next()
+        .expect("first attempt")
+        .rect();
     let close = h.get_by_label("Close word details").rect();
     let meaning = h.get_by_label("very thin, as from hunger or age").rect();
     h.hover_at(first.center());
@@ -209,10 +213,20 @@ fn recall_scrolls_independently_of_the_word_and_header() {
         modifiers: egui::Modifiers::NONE,
     });
     h.run_steps(30);
-    let moved = h.query_all_by_label("Wrong").next().expect("first attempt").rect();
-    assert!(moved.top() < first.top() - 20.0, "recall scrolls in its own area");
+    let moved = h
+        .query_all_by_label("Wrong")
+        .next()
+        .expect("first attempt")
+        .rect();
+    assert!(
+        moved.top() < first.top() - 20.0,
+        "recall scrolls in its own area"
+    );
     assert_eq!(h.get_by_label("Close word details").rect(), close);
-    assert_eq!(h.get_by_label("very thin, as from hunger or age").rect(), meaning);
+    assert_eq!(
+        h.get_by_label("very thin, as from hunger or age").rect(),
+        meaning
+    );
 }
 
 #[test]

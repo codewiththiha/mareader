@@ -100,7 +100,13 @@ pub(crate) fn seed(model: &mut Library, now_ms: u64) -> usize {
                 .get(i % STATUSES.len())
                 .copied()
                 .unwrap_or_default(),
-            tries: if lemma == "gaunt" { 3 } else if recalled { 1 + (i % 3) as u8 } else { 0 },
+            tries: if lemma == "gaunt" {
+                3
+            } else if recalled {
+                1 + (i % 3) as u8
+            } else {
+                0
+            },
             first_try: recalled && i.is_multiple_of(3),
             answers: match lemma {
                 "arcane" => vec![RecallAnswer {
