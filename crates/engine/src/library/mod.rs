@@ -457,6 +457,8 @@ pub enum Action {
     SeedMarks,
     /// A fixture's saved selection AI answers, for Space.
     SeedAiNotes,
+    /// Opens a saved AI selection at its passage.
+    OpenAiSelection(mareader_library::AiSelectionId),
     /// A fixture's made-up AI run; `review` shows the plan it came to.
     OrganizeDemo(bool),
     /// A fixture's paused AI run; `ready` has it finished.

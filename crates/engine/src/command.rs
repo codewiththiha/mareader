@@ -114,8 +114,6 @@ pub enum Command {
     OpenBook(BookId),
     /// Opens a highlight's, note's or bookmark's book at where it is.
     OpenMark(mareader_library::MarkId),
-    /// Opens a saved AI selection at its passage.
-    OpenAiSelection(mareader_library::AiSelectionId),
     OpenSettings(Tab),
     /// A page key: nearly a screen along a strip, a turn when paged.
     Page {

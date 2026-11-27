@@ -70,7 +70,6 @@ impl Route {
             // The library's own, and what finishes wherever the window went.
             I::OpenBook(_)
             | I::OpenMark(_)
-            | I::OpenAiSelection(_)
             | I::SetLibraryView(_)
             | I::Library(_) => false,
             I::ForgetPositions { .. } | I::Open(_) | I::Export { .. } => false,

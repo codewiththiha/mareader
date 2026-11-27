@@ -124,9 +124,15 @@ fn saved_ai_selections_appear_in_all_and_search() {
     assert_eq!(all.total, 4);
     assert_eq!(all.counts[0], 4);
     assert_eq!(all.ai_groups.iter().map(|g| g.rows.len()).sum::<usize>(), 1);
-    let filter = NotesFilter { text: "passage".into(), ..NotesFilter::default() };
+    let filter = NotesFilter {
+        text: "passage".into(),
+        ..NotesFilter::default()
+    };
     let found = notes(&lib, &filter);
     assert_eq!(found.shown, 1);
-    let filter = NotesFilter { kept: Kept::Bookmarks, ..NotesFilter::default() };
+    let filter = NotesFilter {
+        kept: Kept::Bookmarks,
+        ..NotesFilter::default()
+    };
     assert!(notes(&lib, &filter).ai_groups.is_empty());
 }

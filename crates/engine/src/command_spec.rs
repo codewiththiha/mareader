@@ -127,7 +127,6 @@ impl Command {
             Command::Open(..) => "reader.open",
             Command::OpenBook(..) => "reader.open-book",
             Command::OpenMark(..) => "reader.open-mark",
-            Command::OpenAiSelection(..) => "reader.open-mark",
             Command::OpenSettings(..) => "settings.open",
             Command::Page { .. } => "page.step",
             Command::PageAi(..) => "ai.page",

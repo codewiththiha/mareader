@@ -356,7 +356,7 @@ impl MareaderApp {
             }
             UiCommand::OpenSpaceAi { book, id } => {
                 self.ui.space.remember_note_return(book, id.0);
-                self.apply(ctx, Sent::Engine(Command::OpenAiSelection(id)));
+                self.apply(ctx, Sent::Engine(Command::Library(mareader_engine::library::Action::OpenAiSelection(id))));
             }
             UiCommand::SpaceFor { room, book } => {
                 self.ui.space.focus(room, book);

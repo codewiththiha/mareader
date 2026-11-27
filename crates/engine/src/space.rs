@@ -10,8 +10,8 @@ mod notes;
 mod query;
 mod room;
 mod seed;
-mod seed_marks;
 mod seed_ai_notes;
+mod seed_marks;
 mod tally;
 
 use mareader_library::{BookId, Format, LearnedBy, MeaningBy, RecallAnswer, WordId, WordStatus};
@@ -21,8 +21,8 @@ pub use notes::{AiNoteGroup, Kept, NoteGroup, NoteRow, NotesFilter, NotesView, n
 pub use query::{date, day, detail_row, history, view};
 pub use room::Room;
 pub(crate) use seed::seed;
-pub(crate) use seed_marks::seed_marks;
 pub(crate) use seed_ai_notes::seed_ai_notes;
+pub(crate) use seed_marks::seed_marks;
 pub use tally::{Tally, tally};
 
 /// What Space asks of words; each acts in every book.
