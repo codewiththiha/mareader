@@ -169,6 +169,39 @@ impl Selection {
         let Some(delete) = &mut self.delete else {
             return None;
         };
+        let (cancel, confirm) = draw_delete(ctx, delete, t);
+        if cancel {
+            self.delete = None;
+            return None;
+        }
+        if !confirm {
+            return None;
+        }
+        let delete = self.delete.take()?;
+        let mut targets = Vec::new();
+        for row in &delete.rows {
+            let ids = if delete.merged {
+                space::detail_row(lib, row.clone()).book_ids
+            } else {
+                row.book_ids.clone()
+            };
+            for book in ids {
+                if !targets.contains(&(book, row.word)) {
+                    targets.push((book, row.word));
+                }
+            }
+        }
+        out.push(Sent::Engine(Command::Space(Action::RemoveOccurrences(
+            targets,
+        ))));
+        self.selected.clear();
+        delete
+            .ai
+            .then(|| delete.rows.into_iter().map(|r| (r.lemma, r.pos)).collect())
+    }
+}
+
+fn draw_delete(ctx: &Context, delete: &mut Delete, t: &Tokens) -> (bool, bool) {
         let mut cancel = false;
         let mut confirm = false;
         let shown =
@@ -233,33 +266,5 @@ impl Selection {
         if shown.should_close() {
             cancel = true;
         }
-        if cancel {
-            self.delete = None;
-            return None;
-        }
-        if !confirm {
-            return None;
-        }
-        let delete = self.delete.take()?;
-        let mut targets = Vec::new();
-        for row in &delete.rows {
-            let ids = if delete.merged {
-                space::detail_row(lib, row.clone()).book_ids
-            } else {
-                row.book_ids.clone()
-            };
-            for book in ids {
-                if !targets.contains(&(book, row.word)) {
-                    targets.push((book, row.word));
-                }
-            }
-        }
-        out.push(Sent::Engine(Command::Space(Action::RemoveOccurrences(
-            targets,
-        ))));
-        self.selected.clear();
-        delete
-            .ai
-            .then(|| delete.rows.into_iter().map(|r| (r.lemma, r.pos)).collect())
-    }
+    (cancel, confirm)
 }
