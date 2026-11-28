@@ -366,6 +366,7 @@ impl MareaderApp {
             }
             UiCommand::OpenSpaceNote { book, mark } => {
                 self.ui.space.remember_note_return(book, mark.0);
+                self.prepare_note_location(ctx, book, mark);
                 self.apply(ctx, Sent::Engine(Command::OpenMark(mark)));
             }
             UiCommand::OpenSpaceAi { book, id } => {

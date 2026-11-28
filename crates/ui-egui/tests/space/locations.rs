@@ -103,12 +103,22 @@ fn anchored_word_opens_its_exact_page_without_find_and_glows() -> Out {
     if let Ok(path) = std::env::var("MAREADER_VOCAB_SHOT") {
         lit.save(path)?;
     }
+    h.run_steps(25);
+    let moved = h.render()?;
+    if let Ok(path) = std::env::var("MAREADER_VOCAB_SHOT2") {
+        moved.save(path)?;
+    }
     h.run_steps(420);
     let faded = h.render()?;
     let min_x = rect.min.x.max(0.0) as u32;
     let min_y = rect.min.y.max(0.0) as u32;
     let max_x = (rect.max.x as u32).min(lit.width());
     let max_y = (rect.max.y as u32).min(lit.height());
+    let traveling = (min_y..max_y)
+        .flat_map(|y| (min_x..max_x).map(move |x| (x, y)))
+        .filter(|(x, y)| lit.get_pixel(*x, *y) != moved.get_pixel(*x, *y))
+        .count();
+    assert!(traveling > 10, "the accent arc moves: {traveling} pixels");
     let changed = (min_y..max_y)
         .flat_map(|y| (min_x..max_x).map(move |x| (x, y)))
         .filter(|(x, y)| lit.get_pixel(*x, *y) != faded.get_pixel(*x, *y))

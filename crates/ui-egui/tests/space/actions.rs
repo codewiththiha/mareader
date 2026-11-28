@@ -123,12 +123,26 @@ fn context_navigation_can_return_to_its_word() -> Out {
         "return control folds after five seconds"
     );
     h.hover_at(folded.center());
-    h.run_steps(10);
+    h.run_steps(3);
+    let moving = h.get_by_label("Go back to vocabs").rect();
+    assert!(
+        moving.width() > folded.width() && moving.width() < expanded.width(),
+        "hover expansion animates between widths: {folded:?}, {moving:?}, {expanded:?}"
+    );
+    h.run_steps(20);
     let hovered = h.get_by_label("Go back to vocabs").rect();
     assert!(
         hovered.width() > folded.width(),
         "hover expands the control"
     );
+    h.hover_at(egui::pos2(500.0, 300.0));
+    h.run_steps(3);
+    let closing = h.get_by_label("Go back to vocabs").rect();
+    assert!(
+        closing.width() < hovered.width() && closing.width() > folded.width(),
+        "collapse animates: {closing:?}"
+    );
+    h.run_steps(25);
     h.get_by_label("Go back to vocabs").click();
     h.run_steps(30);
     assert_eq!(h.state().route(), Route::Space);

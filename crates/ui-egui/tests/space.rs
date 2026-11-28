@@ -4,6 +4,7 @@
 
 mod actions;
 mod locations;
+mod mark_glow;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;

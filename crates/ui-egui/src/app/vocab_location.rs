@@ -2,7 +2,7 @@
 
 use std::ops::Range;
 
-use egui::{Context, Id, Stroke, StrokeKind};
+use egui::{Context, Id};
 use mareader_library::{BookId, Spot};
 use mareader_workspace::PaneId;
 
@@ -17,6 +17,7 @@ pub(super) struct Location {
     requested: f64,
     resolved: Option<Resolved>,
     visible_at: Option<f64>,
+    cache: Vec<crate::glow::outline::Cache>,
 }
 
 struct Resolved {
@@ -34,11 +35,26 @@ impl Location {
             requested,
             resolved: None,
             visible_at: None,
+            cache: Vec::new(),
         }
     }
 }
 
 impl MareaderApp {
+    pub(super) fn prepare_note_location(
+        &mut self,
+        ctx: &Context,
+        book: BookId,
+        mark: mareader_library::MarkId,
+    ) {
+        self.ui.vocab_location = self
+            .session
+            .library_model()
+            .mark(mark)
+            .filter(|m| m.book.value == book && m.kind == mareader_library::MarkKind::Highlight)
+            .map(|m| Location::new(book, m.spot, m.word.clone(), ctx.input(|i| i.time)));
+    }
+
     pub(super) fn show_vocab_location(&mut self, ctx: &Context) {
         let Some(mut location) = self.ui.vocab_location.take() else {
             return;
@@ -59,14 +75,12 @@ impl MareaderApp {
             return;
         }
         if location.resolved.is_none() {
-            let spans = mareader_engine::skills::resolve(
-                &reading.document,
-                location.spot,
-                &location.source,
-            );
+            let spans = text_span(&reading.document, location.spot).and_then(|spot| {
+                mareader_engine::skills::resolve(&reading.document, spot, &location.source)
+            });
             let Some(spans) = spans else {
                 self.ui.toasts.push(Toast::warning(
-                    "The saved word location no longer matches this book.",
+                    "The saved text location no longer matches this book.",
                 ));
                 return;
             };
@@ -102,27 +116,64 @@ impl MareaderApp {
             pane,
             *room,
             &resolved.spans,
-            &mut location.visible_at,
+            (&mut location.visible_at, &mut location.cache),
             now,
         );
         if location.visible_at.is_some_and(|at| now - at >= 6.0) {
             return;
         }
         self.ui.vocab_location = Some(location);
-        ctx.request_repaint_after_secs(1.0 / 30.0);
+        if crate::motion::enabled(ctx) {
+            ctx.request_repaint_after_secs(1.0 / 60.0);
+        } else {
+            ctx.request_repaint_after_secs(0.2);
+        }
     }
 }
 
-/// Paint just the resolved word's text boxes with the theme accent.
+/// Turn old text and page-box marks into source-validated text spans.
+fn text_span(doc: &mareader_session::Document, spot: Spot) -> Option<Spot> {
+    match spot {
+        Spot::Text { block, start, end } => Some(Spot::Blocks {
+            from: [block, start],
+            to: [block, end],
+        }),
+        Spot::Page {
+            page,
+            rect: [x, y, w, h],
+        } => {
+            if ![x, y, w, h, x + w, y + h].iter().all(|v| v.is_finite()) || w <= 0.0 || h <= 0.0 {
+                return None;
+            }
+            let layer = doc.text_layer(page).ok()?;
+            let in_box = |c: &mareader_pdf::TextChar| {
+                let b = c.bounds;
+                let (cx, cy) = ((b.x0 + b.x1) / 2.0, (b.y0 + b.y1) / 2.0);
+                (x..=x + w).contains(&cx) && (y..=y + h).contains(&cy)
+            };
+            let chars = layer.text.chars();
+            let from = chars.iter().position(in_box)?;
+            let to = chars.iter().rposition(in_box)?.checked_add(1)?;
+            Some(Spot::Chars {
+                from: [page, from],
+                to: [page, to],
+            })
+        }
+        other => Some(other),
+    }
+}
+
+/// Paint a traveling accent flare along the selected text's contour.
 fn draw(
     ctx: &Context,
     docs: DocumentsView<'_>,
     pane: PaneId,
     room: Rect,
     spans: &[(usize, Range<usize>)],
-    visible_at: &mut Option<f64>,
+    state: (&mut Option<f64>, &mut Vec<crate::glow::outline::Cache>),
     now: f64,
 ) {
+    let (visible_at, cache) = state;
     let tokens = theme::Tokens::get(ctx);
     let painter = z_order::painter(ctx, Tier::PaneMark, Id::new("vocab-location"));
     z_order::register(ctx, Tier::PaneMark, painter.layer_id());
@@ -137,20 +188,47 @@ fn draw(
         let Some(layer) = docs.cached_layer(pane, sheet.page) else {
             continue;
         };
+        let lines: Vec<_> = layer
+            .text
+            .line_boxes(range.clone())
+            .map(|b| sheet.to_screen(b))
+            .filter(|r| r.is_finite() && r.is_positive() && clip.expand(80.0).intersects(*r))
+            .take(256)
+            .collect();
+        if !lines.iter().any(|r| clip.intersects(*r)) {
+            continue;
+        }
+        let since = *visible_at.get_or_insert(now);
+        let strength = if crate::motion::enabled(ctx) {
+            ((6.0 - (now - since)) / 2.0).clamp(0.0, 1.0) as f32
+        } else {
+            1.0
+        };
         let painter = painter.with_clip_rect(clip);
-        for bounds in layer.text.line_boxes(range.clone()) {
-            let rect = sheet.to_screen(bounds);
-            if !rect.is_finite() || !rect.is_positive() || !clip.intersects(rect) {
-                continue;
-            }
-            let since = *visible_at.get_or_insert(now);
-            let strength = ((6.0 - (now - since)) / 2.0).clamp(0.0, 1.0) as f32;
-            for (expand, width, alpha) in [(3.0, 1.5, 0.95), (5.0, 3.0, 0.30), (7.0, 5.0, 0.10)] {
-                painter.rect_stroke(
-                    rect.expand(expand),
-                    4.0,
-                    Stroke::new(width, tokens.accent.gamma_multiply(alpha * strength)),
-                    StrokeKind::Middle,
+        for (group_index, group) in crate::skill_outline::shape::groups(&lines)
+            .into_iter()
+            .enumerate()
+        {
+            let points = crate::skill_outline::shape::outline(group);
+            if let Some(line) = group.first() {
+                let outline = crate::glow::Outline::path(
+                    &points,
+                    line.expand(0.5),
+                    cache,
+                    (sheet.page, group_index),
+                    now - since,
+                    1.0,
+                );
+                crate::glow::paint_accent(
+                    ctx,
+                    &painter,
+                    &tokens,
+                    outline,
+                    0.0,
+                    crate::glow::Glow {
+                        strength,
+                        whole: 0.0,
+                    },
                 );
             }
         }

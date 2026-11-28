@@ -155,10 +155,53 @@ pub fn paint<'a>(
     radius: f32,
     glow: Glow,
 ) -> bool {
-    let (mesh, length) = match outline.into().0 {
+    paint_inner(ctx, painter, tokens, outline.into(), radius, glow, false)
+}
+
+/// A moving single-colour flare for a reader destination, not an AI job.
+pub(crate) fn paint_accent<'a>(
+    ctx: &Context,
+    painter: &Painter,
+    tokens: &Tokens,
+    outline: impl Into<Outline<'a>>,
+    radius: f32,
+    glow: Glow,
+) -> bool {
+    paint_inner(ctx, painter, tokens, outline.into(), radius, glow, true)
+}
+
+fn paint_inner(
+    ctx: &Context,
+    painter: &Painter,
+    tokens: &Tokens,
+    outline: Outline<'_>,
+    radius: f32,
+    glow: Glow,
+    accent: bool,
+) -> bool {
+    let make_look = |length, time| {
+        let mut look = look_at(ctx, tokens, glow, length, time);
+        if accent {
+            let c = tokens.accent;
+            let rgb = [c.r(), c.g(), c.b()].map(|v| f32::from(v) / 255.0);
+            look.light = Light {
+                hues: [rgb; 4],
+                add: 0.0,
+                strength: 1.0,
+            };
+            look.strength = glow.strength;
+            look.accent = true;
+            if !motion::enabled(ctx) {
+                look.head = 0.125;
+                look.drift = 0.0;
+            }
+        }
+        look
+    };
+    let (mesh, length) = match outline.0 {
         OutlineKind::Rect(rect) => {
             let ring = Ring::new(rect, radius);
-            let look = look_at(ctx, tokens, glow, ring.length, ctx.input(|i| i.time));
+            let look = make_look(ring.length, ctx.input(|i| i.time));
             (ring.mesh(&look), ring.length)
         }
         OutlineKind::Path {
@@ -184,12 +227,16 @@ pub fn paint<'a>(
             let Some((origin, geometry)) = outline::cached(points, reach, caches, key) else {
                 return false;
             };
-            let look = look_at(ctx, tokens, glow, geometry.length, travel);
+            let look = make_look(geometry.length, travel);
             (mesh::path(geometry, origin, reach, &look), geometry.length)
         }
     };
     painter.add(Shape::mesh(mesh));
-    wake(ctx, length);
+    if !accent {
+        wake(ctx, length);
+    } else if motion::enabled(ctx) {
+        ctx.request_repaint_after_secs(1.0 / 60.0);
+    }
     true
 }
 
@@ -285,6 +332,7 @@ struct Look {
     strength: f32,
     whole: f32,
     light: Light,
+    accent: bool,
 }
 
 impl Look {
@@ -295,15 +343,24 @@ impl Look {
             strength: glow.strength * light.strength,
             whole: glow.whole,
             light,
+            accent: false,
         }
     }
 
     /// The colour and brightness `share` of the way round a ring `length` long.
     fn at(&self, share: f32, length: f32) -> ([f32; 3], f32) {
         // Short rings light all round; long ones carry a travelling arc.
-        let half = (110.0 / length).clamp(0.25, 0.5);
-        // A faint line keeps the whole shape readable behind the arc.
-        let floor = (1.0 - length / 220.0).clamp(0.12, 0.7);
+        let half = if self.accent {
+            0.22
+        } else {
+            (110.0 / length).clamp(0.25, 0.5)
+        };
+        // The destination arc has no solid ring, even on a short word.
+        let floor = if self.accent {
+            0.0
+        } else {
+            (1.0 - length / 220.0).clamp(0.12, 0.7)
+        };
         let laps = if half > 0.34 { 1.0 } else { 2.0 };
         let off = share - self.head;
         let d = ((off + 0.5).rem_euclid(1.0) - 0.5).abs();

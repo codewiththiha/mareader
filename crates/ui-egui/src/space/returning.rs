@@ -1,6 +1,6 @@
 //! The reader's way back to the word that opened it.
 
-use egui::{Context, Frame, Id, Margin, Rect, RichText, Stroke};
+use egui::{Context, Id, Rect, Sense, Stroke, StrokeKind, vec2};
 use mareader_engine::space::{Filter, NotesFilter};
 use mareader_library::BookId;
 
@@ -63,35 +63,42 @@ pub(super) fn show(ctx: &Context, back: &mut Return, pane: Rect, bar: bool) -> b
     if now < started + 5.0 {
         ctx.request_repaint_after_secs((started + 5.0 - now).min(0.25) as f32);
     }
+    let amount =
+        ctx.animate_bool_with_time(id.with("expand"), expanded, crate::motion::secs(ctx, 0.25));
+    let label = if back.notes.is_some() {
+        "Go back to notes"
+    } else {
+        "Go back to vocabs"
+    };
     let shown = z_order::area(ctx, Tier::PageCard, id)
         .fixed_pos(pos)
         .show(ctx, |ui| {
-            Frame::new()
-                .fill(t.card)
-                .stroke(Stroke::new(1.0, t.line))
-                .corner_radius(18)
-                .inner_margin(Margin::symmetric(8, 5))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        let icon = Icon::ChevronLeft.image(ui, 18.0).tint(t.ink);
-                        let label = if back.notes.is_some() {
-                            "Go back to notes"
-                        } else {
-                            "Go back to vocabs"
-                        };
-                        let text = if expanded { label } else { "" };
-                        let button =
-                            egui::Button::image_and_text(icon, RichText::new(text).color(t.ink))
-                                .frame(false);
-                        let response = ui.add(button);
-                        response.widget_info(|| {
-                            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label)
-                        });
-                        response.clicked()
-                    })
-                    .inner
-                })
-                .inner
+            let galley = ui.painter().layout_no_wrap(
+                label.to_owned(),
+                egui::FontId::proportional(t.text_small + 1.0),
+                t.ink,
+            );
+            let width = 36.0 + (galley.size().x + 6.0) * amount;
+            let (rect, response) = ui.allocate_exact_size(vec2(width, 36.0), Sense::click());
+            ui.painter().rect(
+                rect,
+                18.0,
+                t.card,
+                Stroke::new(1.0, t.line),
+                StrokeKind::Inside,
+            );
+            let icon =
+                Rect::from_center_size(rect.left_center() + vec2(18.0, 0.0), vec2(18.0, 18.0));
+            Icon::ChevronLeft.paint(ui, icon, t.ink);
+            if amount > 0.0 {
+                let at = egui::pos2(rect.left() + 34.0, rect.center().y - galley.size().y / 2.0);
+                ui.painter()
+                    .with_clip_rect(rect.shrink2(vec2(4.0, 0.0)))
+                    .galley_with_override_text_color(at, galley, t.ink.gamma_multiply(amount));
+            }
+            response
+                .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+            response.clicked()
         });
     crate::hover_guard::protect(ctx, shown.response.rect, true, true);
     let over = shown.response.contains_pointer();

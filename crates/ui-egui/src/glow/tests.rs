@@ -13,6 +13,7 @@ fn look(head: f32) -> Look {
         strength: 1.0,
         whole: 0.0,
         light: light(),
+        accent: false,
     }
 }
 
@@ -120,4 +121,17 @@ fn reduced_motion_holds_the_flare_and_snaps_focus_and_close() {
         },
     );
     out.textures_delta.clear();
+}
+
+#[test]
+fn accent_arc_moves_even_around_short_words_and_has_no_solid_ring() {
+    let look = Look {
+        accent: true,
+        ..look(0.0)
+    };
+    assert!(look.at(0.0, 60.0).1 > 0.99);
+    assert_eq!(look.at(0.5, 60.0).1, 0.0);
+    let moved = Look { head: 0.5, ..look };
+    assert!(moved.at(0.5, 60.0).1 > 0.99);
+    assert_eq!(moved.at(0.0, 60.0).1, 0.0);
 }

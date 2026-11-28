@@ -5,7 +5,7 @@ use mareader_engine::activity::Key;
 use mareader_workspace::PaneId;
 
 mod feedback;
-mod shape;
+pub(crate) mod shape;
 
 use crate::documents::DocumentsView;
 use crate::theme::Tokens;

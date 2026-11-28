@@ -6,7 +6,7 @@ const PAD: f32 = 7.0;
 const RADIUS: f32 = 6.0;
 
 /// Split disconnected lines so a contour never bridges columns or paragraphs.
-pub(super) fn groups(lines: &[Rect]) -> Vec<&[Rect]> {
+pub(crate) fn groups(lines: &[Rect]) -> Vec<&[Rect]> {
     let mut out = Vec::new();
     let mut start = 0;
     for (i, pair) in lines.windows(2).enumerate() {
@@ -29,7 +29,7 @@ pub(super) fn groups(lines: &[Rect]) -> Vec<&[Rect]> {
 }
 
 /// Trace the boundary of the line bands, then round their joins.
-pub(super) fn outline(lines: &[Rect]) -> Vec<Pos2> {
+pub(crate) fn outline(lines: &[Rect]) -> Vec<Pos2> {
     let (Some(first), Some(last)) = (lines.first(), lines.last()) else {
         return Vec::new();
     };
